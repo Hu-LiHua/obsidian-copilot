@@ -556,6 +556,43 @@ describe("ChatSingleMessage", () => {
       insert.mockRestore();
     });
 
+    it("https://github.com/Hu-LiHua/obsidian-copilot/issues/2 drags the copy text from a reply's row", async () => {
+      render(
+        <TooltipProvider>
+          <ChatSingleMessage
+            message={{ ...baseMessage, message: "The year is fixed." }}
+            app={createAppStub()}
+            isStreaming={false}
+            responseText={"I asked Maya.\n\nThe year is fixed."}
+          />
+        </TooltipProvider>
+      );
+      await waitFor(() => expect(renderMarkdownMock).toHaveBeenCalled());
+
+      fireEvent.click(screen.getByTitle("Copy"));
+      const dataTransfer = {
+        effectAllowed: "",
+        setData: jest.fn(),
+      } as unknown as DataTransfer;
+      const row = screen.getByTitle("Copy").closest("[data-response-footer]");
+      expect(row).not.toBeNull();
+
+      const pointer = new MouseEvent("pointerdown", {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+      });
+      Object.defineProperty(pointer, "isPrimary", { value: true });
+      fireEvent(row!, pointer);
+      fireEvent.dragStart(row!, { dataTransfer });
+
+      expect(mockCopy).toHaveBeenLastCalledWith("I asked Maya.\n\nThe year is fixed.");
+      expect(dataTransfer.setData).toHaveBeenCalledWith(
+        "text/plain",
+        "I asked Maya.\n\nThe year is fixed."
+      );
+    });
+
     it("https://github.com/Brevilabs/obsidian-copilot-private/issues/971 keeps a reply's row outside the box that clips its content, so the phone's larger menu button is not cut off", async () => {
       render(
         <TooltipProvider>

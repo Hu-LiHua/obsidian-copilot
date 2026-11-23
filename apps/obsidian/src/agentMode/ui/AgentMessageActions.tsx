@@ -2,6 +2,7 @@ import { AgentTurnDurationIndicator } from "@/agentMode/ui/AgentTurnDurationIndi
 import { CopyButton } from "@/components/chat-components/CopyButton";
 import { MessageActionButton } from "@/components/chat-components/MessageActionButton";
 import { AssistantResponseFooter } from "@/components/ui/AssistantResponseFooter";
+import { useMessageDrag } from "@/hooks/useMessageDrag";
 import { insertAtCursor } from "@/utils";
 import { GitBranchPlus, TextCursorInput } from "lucide-react";
 import { App } from "obsidian";
@@ -21,30 +22,35 @@ export const AgentMessageActions: React.FC<AgentMessageActionsProps> = ({
   durationMs,
   timestampMs,
   onContinue,
-}) => (
-  <AssistantResponseFooter
-    leading={
-      durationMs !== undefined ? (
-        <AgentTurnDurationIndicator status="complete" durationMs={durationMs} inline />
-      ) : undefined
-    }
-    timestampMs={timestampMs}
-    actions={
-      <div className="tw-flex tw-items-center tw-gap-1">
-        <MessageActionButton
-          label="Insert / Replace at cursor"
-          icon={TextCursorInput}
-          onClick={() => void insertAtCursor(app, text)}
-        />
-        <CopyButton text={text} />
-        {onContinue && (
+}) => {
+  const drag = useMessageDrag({ text });
+
+  return (
+    <AssistantResponseFooter
+      drag={drag}
+      leading={
+        durationMs !== undefined ? (
+          <AgentTurnDurationIndicator status="complete" durationMs={durationMs} inline />
+        ) : undefined
+      }
+      timestampMs={timestampMs}
+      actions={
+        <div className="tw-flex tw-items-center tw-gap-1">
           <MessageActionButton
-            label="Continue from here in a new chat"
-            icon={GitBranchPlus}
-            onClick={onContinue}
+            label="Insert / Replace at cursor"
+            icon={TextCursorInput}
+            onClick={() => void insertAtCursor(app, text)}
           />
-        )}
-      </div>
-    }
-  />
-);
+          <CopyButton text={text} />
+          {onContinue && (
+            <MessageActionButton
+              label="Continue from here in a new chat"
+              icon={GitBranchPlus}
+              onClick={onContinue}
+            />
+          )}
+        </div>
+      }
+    />
+  );
+};
