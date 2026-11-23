@@ -1,9 +1,11 @@
+import type { MessageDragHandlers } from "@/hooks/useMessageDrag";
 import { formatMessageClock, formatMessageDateTime } from "@/lib/messageTime";
 import { cn } from "@/lib/utils";
 import { Platform } from "obsidian";
 import React from "react";
 
 export interface AssistantResponseFooterProps {
+  drag?: MessageDragHandlers;
   leading?: React.ReactNode;
   timestampMs?: number;
   actions?: React.ReactNode;
@@ -18,6 +20,7 @@ const HIDDEN_AT_REST =
   "tw-opacity-0 tw-transition-opacity group-focus-within/response:tw-opacity-100 group-hover/response:tw-opacity-100";
 
 export const AssistantResponseFooter: React.FC<AssistantResponseFooterProps> = ({
+  drag,
   leading,
   timestampMs,
   actions,
@@ -33,6 +36,8 @@ export const AssistantResponseFooter: React.FC<AssistantResponseFooterProps> = (
 
   return (
     <div
+      {...(Platform.isMobile ? {} : (drag ?? {}))}
+      data-response-footer=""
       className={cn(
         "tw-flex tw-min-w-0 tw-items-center tw-justify-between tw-gap-2",
         rests && DIMMED_AT_REST

@@ -57,6 +57,8 @@ Hover over a message to use its actions:
 - Your messages: **Copy**, **Edit**, and **Delete**.
 - Copilot responses: **Insert / Replace at cursor**, **Copy**, **Regenerate**, and **Delete**.
 
+Drag a Copilot response by its row, the row with its time and its actions, into a note to insert the same text as **Copy** where you drop it. This works on desktop; the response's text keeps its normal selection, and the row's buttons keep their clicks.
+
 Your messages collapse after 12 lines. Select **Show more** to read the full message or **Show less** to collapse it again. Copy and Edit still use the complete message.
 
 After a response, the token counter in the top bar shows the context used for the latest response when the provider reports token usage.
