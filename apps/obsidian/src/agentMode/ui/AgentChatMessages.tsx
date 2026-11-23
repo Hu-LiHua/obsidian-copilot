@@ -167,9 +167,11 @@ const AgentMessageRow = memo(function AgentMessageRow({
         </div>
       ) : null}
       {isStreamingPlaceholder ? (
-        <div className="tw-px-3 tw-pt-2">{runningTurnDuration}</div>
+        <div className="tw-mx-2 tw-my-1 tw-rounded-md tw-border tw-border-solid tw-border-border tw-p-2">
+          {runningTurnDuration}
+        </div>
       ) : renderTrail ? (
-        <div className="tw-px-3 tw-pt-2">
+        <div className="tw-mx-2 tw-my-1 tw-rounded-md tw-border tw-border-solid tw-border-border tw-p-2">
           <AgentTrail
             parts={message.parts ?? EMPTY_PARTS}
             isStreaming={isStreaming}

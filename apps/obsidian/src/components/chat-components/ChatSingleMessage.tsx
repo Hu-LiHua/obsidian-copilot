@@ -909,10 +909,7 @@ const ChatSingleMessage: React.FC<ChatSingleMessageProps> = ({
   return (
     <div className="tw-group/message tw-relative tw-my-1 tw-flex tw-w-full tw-flex-col">
       <div
-        className={cn(
-          "tw-mx-2 tw-rounded-md tw-p-2",
-          isUserMessage && "tw-border tw-border-solid tw-border-border"
-        )}
+        className={cn("tw-mx-2 tw-rounded-md tw-border tw-border-solid tw-border-border tw-p-2")}
         style={
           message.sender === USER_SENDER
             ? { backgroundColor: "var(--background-modifier-hover)" }
