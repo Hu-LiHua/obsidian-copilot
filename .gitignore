@@ -40,3 +40,13 @@ copilot/acp-frames.old.ndjson
 # Models.dev catalog cache (disposable runtime cache under .copilot/)
 .copilot/model-catalog-cache.json
 .otacon/
+
+# AOCI agent host integration (machine-bound; do not commit)
+.mcp.json
+.mcp.json.backup.*
+opencode.json
+opencode.json.backup.*
+
+# Local agent configuration (machine-bound; do not commit local edits)
+.claude/settings.json
+AGENTS.md
