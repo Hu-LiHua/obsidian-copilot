@@ -32,8 +32,10 @@ import { isDesktopRuntime } from "@/utils/desktopRuntime";
 import { Editor, MarkdownView, Notice, TFile } from "obsidian";
 import { v4 as uuidv4 } from "uuid";
 import { COMMAND_IDS, COMMAND_ICONS, COMMAND_NAMES, CommandId } from "@/constants";
-import { attachSelection } from "@/selection/selectionStore";
-import { editorSelectionReport } from "@/selection/selectionWatcher";
+import {
+  addSelectionToChatContext,
+  buildEditorSelectionReport,
+} from "@/selection/selectionActions";
 import { webSelectionReport } from "@/services/webViewerService/webViewerServiceSelection";
 
 type PublishFile = (file: TFile) => void;
@@ -280,15 +282,13 @@ export function registerCommands(plugin: CopilotPlugin, publish: PublishFile) {
       return;
     }
 
-    const report = editorSelectionReport({ editor, file });
-    if (!report?.context) {
+    const selection = buildEditorSelectionReport(editor, file);
+    if (!selection) {
       new Notice("No text selected");
       return;
     }
 
-    attachSelection(report);
-
-    await plugin.activateChatViewForContext();
+    await addSelectionToChatContext(plugin, selection);
   });
 
   addCommand(plugin, COMMAND_IDS.ADD_WEB_SELECTION_TO_CHAT_CONTEXT, async () => {
@@ -326,9 +326,7 @@ export function registerCommands(plugin: CopilotPlugin, publish: PublishFile) {
         faviconUrl: pageInfo.faviconUrl || undefined,
       };
 
-      attachSelection(webSelectionReport(webSelectedTextContext));
-
-      await plugin.activateChatViewForContext();
+      await addSelectionToChatContext(plugin, webSelectionReport(webSelectedTextContext));
     } catch (error) {
       logError("Error adding web selection to context:", error);
       new Notice("Failed to get web selection");

@@ -13,7 +13,7 @@ The box at the bottom of the chat where the user writes and sends a message: mod
 - input-needs-setup-agent-chat: a chat with a teammate whose model can't run on this device opens read-only: in place of the chat input, "You can read this chat, but <name> can't reply. <reason>" with `New Copilot chat` and `Open <name>'s profile`. Choosing an old chat in `Recent chats` or the chat history whose agent isn't set up on this device opens the teammate's profile, with the reason, instead of the chat.
 - input-locked-agent-chat: without a valid Supporter license, a teammate's chat from before opens read-only: in place of the chat input, "You can read this chat, but <name> can't reply without a valid Supporter license." with `New Copilot chat` (a new Copilot chat in the tab, without this conversation) and `Enter license key` (opens the license field in Copilot settings). Its `remembered` cards still open its `MEMORY.md` and `instructions.md`, and its `@` cards still open their conversation read-only. A reply already running when the license stops being valid finishes first, and a teammate asked before then still brings its reply back.
 - input-current-note: the open note or web tab shows as a `Current` badge that the user can remove.
-- input-selection: text selected in a note shows as a badge with the text and its line, such as `L3`, and stays highlighted in the note while the chat has focus; text selected in a [turn diff](turn-diffs.md) or a web page shows as a `Selection` badge.
+- input-selection: text selected in a note shows as a badge with the text and its line, such as `L3`, and stays highlighted in the note while the chat has focus; text selected in a [turn diff](turn-diffs.md) or a web page shows as a `Selection` badge. Adding a selection keeps the ones already added, so one message can point at several passages, while a fresh selection still replaces the badge it is showing.
 - input-images: paste or drop images to attach them; `Remove image` takes one off.
 - input-files: drop a note from the file explorer or a Copilot list such as [Relevant Notes](relevant-notes.md), drop a file of any type from the computer, or pick one through `Files`, to add it as context. A file from outside the vault is copied to the attachment folder first, or to the project's `sources/` folder inside a [project](projects.md); one notice per drop names the copies and their folder. A folder dropped from the file explorer, or picked through `Add context` > Folders, shows as a badge and is listed to the agent by its vault path, like a note.
 - input-commands: `/` lists `compact` ("Summarize this chat to free up context"), the agent's skills, and custom commands.
@@ -24,6 +24,7 @@ The box at the bottom of the chat where the user writes and sends a message: mod
 
 - At the bottom of the chat, on the [start screen](start-screen.md) and in every chat. Open Copilot Chat from the ribbon icon or the `Open Copilot Chat window` command.
 - The `Add selection to chat context` and `Add web selection to chat context` commands add the current selection.
+- With the Selection Toolbar plugin installed, its `Add to Copilot` button adds the selected text.
 
 ## Driving it
 
@@ -41,6 +42,7 @@ The box at the bottom of the chat where the user writes and sends a message: mod
 - Add context: choose `Add context` (**+**). Notes, Web tabs, Folders, and Files are listed.
 - Current note: open a note beside Copilot Chat. A badge with its name and `Current` shows above the text.
 - Selection: select a line in that note. A badge with the selected text and its line (`L3`) shows next to the `Current` badge. Click the chat input: the line stays highlighted in the note. Remove the badge: the highlight goes away.
+- More selections: select a passage, then choose `Add selection to chat context` in the command palette, or as `Add to Copilot` in the Selection Toolbar. The passage joins the badges already there, each with its own line range, and the chat opens with them. Select another passage and add it again for a third badge. Remove one badge and only that passage goes.
 - Images: paste an image into the chat input. A preview shows above the text; `Remove image` takes it off.
 - Files: drop a `.csv` file from Finder onto the chat input. A copy appears in the attachment folder, a notice reads `Copied <file> into <folder>/`, and its badge shows above the text. Drag a note from the file explorer onto the chat input: its badge shows and nothing is copied. Drag a nested folder from the file explorer onto the chat input: its badge shows above the text, the message text is unchanged, and the sent message shows the folder badge.
 - Commands: type `/`. `compact` is listed first with "Summarize this chat to free up context", followed by skills.
@@ -53,6 +55,7 @@ The box at the bottom of the chat where the user writes and sends a message: mod
 - A chat reopened from Recent chats or [Copilot Navigator](copilot-navigator.md), after `Shut down` or an Obsidian restart, comes back on the model and effort of its last reply, not the agent's `Default model`.
 - While the agent works, Escape in the chat input stops the reply even when a draft is typed.
 - A selection made in reading view keeps its badge but is not highlighted in the note once the chat has focus.
+- Up to 10 added selections are kept at once. Adding one more shows a notice and leaves the list as it was.
 - Only suggestions skip Copilot's own files: a note link typed in full, a dropped file, and the `Active Note` row still attach one.
 - A file dragged from Finder that is already in the vault is attached where it is, not copied. One drop can carry notes and outside files together; each is attached. A folder from outside the vault can't be added: dropping one shows a notice.
 - The locked `Teammates` row shows only in Copilot Chat, never in Quick Chat. It shows for every license that is not a valid Supporter license, and with no license key. With no license key, choosing it sends nothing to Brevilabs.
