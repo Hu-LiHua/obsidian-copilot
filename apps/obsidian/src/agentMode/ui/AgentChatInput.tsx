@@ -333,11 +333,16 @@ export const AgentChatInput = memo(function AgentChatInput({
       const notes = dedupeBy(candidateNotes, (n) => n.path);
       const folders = dedupeBy([...contextFolders, ...mentionedFolders], (folder) => folder);
 
-      const noteSelection = selectedTextContexts.find(isNoteSelectedTextContext);
+      // Every attached note excerpt fills the placeholder, so a custom command can see all of them.
+      // https://github.com/Hu-LiHua/obsidian-copilot/issues/1
+      const noteSelection = selectedTextContexts
+        .filter(isNoteSelectedTextContext)
+        .map((context) => context.content)
+        .join("\n\n");
       const expanded = await expandCustomCommandPrefix(
         text,
         getCachedCustomCommands(),
-        noteSelection?.content ?? "",
+        noteSelection,
         activeFile
       );
       if (expanded.matched) {

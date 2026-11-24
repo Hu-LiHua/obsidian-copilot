@@ -15,6 +15,7 @@ import { BrevilabsClient } from "@/LLMProviders/brevilabsClient";
 import ChainOwner from "@/LLMProviders/chainOwner";
 import { clearSelection, reportSelection, subscribeSelection } from "@/selection/selectionStore";
 import { watchSelections } from "@/selection/selectionWatcher";
+import { registerSelectionToolbarIntegration } from "@/selection/selectionToolbarIntegration";
 import { activeDrawingSelection } from "@/excalidraw/excalidrawApi";
 import { activePdfSelection } from "@/pdf/pdfSelection";
 import { registerCommands } from "@/commands";
@@ -590,6 +591,8 @@ export default class CopilotPlugin extends Plugin implements CopilotStartup {
     this.initSelectionHandler();
 
     this.initWebSelectionWatcher();
+
+    registerSelectionToolbarIntegration(this);
   }
 
   // A disabled or updated copy may still be writing data.json or stopping Agent Mode backends;

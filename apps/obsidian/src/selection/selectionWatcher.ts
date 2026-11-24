@@ -1,4 +1,8 @@
-import { reportSelection, type SelectionReport } from "@/selection/selectionStore";
+import {
+  noteSelectionKey,
+  reportSelection,
+  type SelectionReport,
+} from "@/selection/selectionStore";
 import { EditorView } from "@codemirror/view";
 import {
   editorInfoField,
@@ -22,7 +26,7 @@ export function editorSelectionReport({
   const [startLine, endLine] = [range.anchor.line + 1, range.head.line + 1].sort((a, b) => a - b);
   return {
     location: file.path,
-    key: `${file.path}:${range.anchor.line}:${range.anchor.ch}:${range.head.line}:${range.head.ch}`,
+    key: noteSelectionKey(file.path, range.anchor, range.head),
     context: {
       id: uuidv4(),
       content,

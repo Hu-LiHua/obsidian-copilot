@@ -1,8 +1,9 @@
 import {
-  attachSelection,
+  MAX_PINNED_SELECTIONS,
   clearSelection,
   dismissSelection,
   getSelectedTextContexts,
+  pinSelection,
   reportSelection,
   subscribeSelection,
   useSelectedTextContexts,
@@ -12,6 +13,7 @@ import { act, renderHook } from "@testing-library/react";
 
 const ISSUE_797 = "https://github.com/Brevilabs/obsidian-copilot-private/issues/797";
 const ISSUE_842 = "https://github.com/Brevilabs/obsidian-copilot-private/issues/842";
+const ISSUE_1 = "https://github.com/Hu-LiHua/obsidian-copilot/issues/1";
 
 let nextId = 0;
 const noteExcerpt = (notePath: string, content: string): NoteSelectedTextContext => ({
@@ -32,6 +34,12 @@ const webExcerpt = (url: string, content: string): WebSelectedTextContext => ({
 });
 const select = (context: NoteSelectedTextContext | WebSelectedTextContext, key: string) =>
   reportSelection({
+    location: context.sourceType === "web" ? context.url : context.notePath,
+    key,
+    context,
+  });
+const add = (context: NoteSelectedTextContext | WebSelectedTextContext, key: string) =>
+  pinSelection({
     location: context.sourceType === "web" ? context.url : context.notePath,
     key,
     context,
@@ -91,17 +99,72 @@ describe("selectionStore", () => {
 
       expect(getSelectedTextContexts()).toEqual([again]);
     });
+
+    it(`keeps an explicitly added excerpt attached when another selection is reported (${ISSUE_1})`, () => {
+      const added = noteExcerpt("Research.md", "First passage");
+      const live = noteExcerpt("Research.md", "Second passage");
+      add(added, "pinned:first");
+
+      select(live, "live:second");
+
+      expect(getSelectedTextContexts()).toEqual([added, live]);
+    });
+
+    it(`does not attach a selection that is already attached as an excerpt (${ISSUE_1})`, () => {
+      const added = noteExcerpt("Research.md", "First passage");
+      add(added, "pinned:only");
+
+      select(noteExcerpt("Research.md", "First passage"), "pinned:only");
+
+      expect(getSelectedTextContexts()).toEqual([added]);
+    });
   });
 
-  describe("attachSelection()", () => {
-    it("attaches a command's selection, which its note's later empty report clears", () => {
-      const excerpt = noteExcerpt("Research.md", "Excerpt");
+  describe("pinSelection()", () => {
+    it(`adds an explicitly added excerpt beside the excerpt already attached (${ISSUE_1})`, () => {
+      const first = noteExcerpt("Research.md", "First passage");
+      const second = noteExcerpt("Research.md", "Second passage");
 
-      attachSelection({ location: "Research.md", key: "command:select", context: excerpt });
+      add(first, "pinned:first");
+      add(second, "pinned:second");
+
+      expect(getSelectedTextContexts()).toEqual([first, second]);
+    });
+
+    it(`keeps a single badge when the excerpt already shown is added again (${ISSUE_1})`, () => {
+      const excerpt = noteExcerpt("Research.md", "First passage");
+      select(excerpt, "passage:first");
+
+      add(excerpt, "passage:first");
+
       expect(getSelectedTextContexts()).toEqual([excerpt]);
+    });
+
+    it(`does not attach the same excerpt twice (${ISSUE_1})`, () => {
+      const excerpt = noteExcerpt("Research.md", "First passage");
+
+      add(excerpt, "pinned:once");
+      add(noteExcerpt("Research.md", "First passage"), "pinned:once");
+
+      expect(getSelectedTextContexts()).toEqual([excerpt]);
+    });
+
+    it(`keeps an explicitly added excerpt when its own note reports nothing selected (${ISSUE_1})`, () => {
+      const excerpt = noteExcerpt("Research.md", "First passage");
+      add(excerpt, "pinned:keep");
 
       reportSelection({ location: "Research.md", context: null });
-      expect(getSelectedTextContexts()).toEqual([]);
+
+      expect(getSelectedTextContexts()).toEqual([excerpt]);
+    });
+
+    it(`refuses to add more excerpts than the limit allows (${ISSUE_1})`, () => {
+      for (let index = 0; index < MAX_PINNED_SELECTIONS; index++) {
+        expect(add(noteExcerpt("Research.md", `Passage ${index}`), `pinned:${index}`)).toBe(true);
+      }
+
+      expect(add(noteExcerpt("Research.md", "One too many"), "pinned:overflow")).toBe(false);
+      expect(getSelectedTextContexts()).toHaveLength(MAX_PINNED_SELECTIONS);
     });
   });
 
@@ -126,6 +189,17 @@ describe("selectionStore", () => {
 
       expect(getSelectedTextContexts()).toEqual([excerpt]);
     });
+
+    it(`removes only the excerpt with that id (${ISSUE_1})`, () => {
+      const first = noteExcerpt("Research.md", "First passage");
+      const second = noteExcerpt("Research.md", "Second passage");
+      add(first, "pinned:first");
+      add(second, "pinned:second");
+
+      dismissSelection(first.id);
+
+      expect(getSelectedTextContexts()).toEqual([second]);
+    });
   });
 
   describe("clearSelection()", () => {
@@ -138,6 +212,14 @@ describe("selectionStore", () => {
       const again = noteExcerpt("Drawing.excalidraw.md", "Shape");
       select(again, "sent:select");
       expect(getSelectedTextContexts()).toEqual([again]);
+    });
+
+    it(`removes the explicitly added excerpts as well (${ISSUE_1})`, () => {
+      add(noteExcerpt("Research.md", "First passage"), "pinned:first");
+
+      clearSelection();
+
+      expect(getSelectedTextContexts()).toEqual([]);
     });
   });
 

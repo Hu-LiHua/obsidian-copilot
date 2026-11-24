@@ -25,6 +25,7 @@ import { editorInfoField, type App, type MarkdownFileInfo, type Plugin } from "o
 
 const ISSUE_597 = "https://github.com/Brevilabs/obsidian-copilot-private/issues/597";
 const ISSUE_794 = "https://github.com/Brevilabs/obsidian-copilot-private/issues/794";
+const ISSUE_7 = "https://github.com/Hu-LiHua/obsidian-copilot/issues/7";
 
 const research = { path: "Research.md", basename: "Research" };
 
@@ -66,7 +67,7 @@ describe("selectionWatcher", () => {
 
       expect(report).toMatchObject({
         location: "Research.md",
-        key: "Research.md:2:7:1:0",
+        key: "Research.md:1:0:2:7",
         context: {
           content: "An excerpt from the note.",
           sourceType: "note",
@@ -75,6 +76,26 @@ describe("selectionWatcher", () => {
           endLine: 3,
         },
       });
+    });
+
+    it(`gives a passage dragged upwards the same identity as the same passage dragged downwards (${ISSUE_7})`, () => {
+      const draggedUp = editorSelectionReport({
+        file: research,
+        editor: {
+          listSelections: () => [{ anchor: { line: 4, ch: 7 }, head: { line: 2, ch: 0 } }],
+          getSelection: () => "An excerpt from the note.",
+        },
+      } as unknown as MarkdownFileInfo);
+      const draggedDown = editorSelectionReport({
+        file: research,
+        editor: {
+          listSelections: () => [{ anchor: { line: 2, ch: 0 }, head: { line: 4, ch: 7 } }],
+          getSelection: () => "An excerpt from the note.",
+        },
+      } as unknown as MarkdownFileInfo);
+
+      expect(draggedUp).toMatchObject({ key: "Research.md:2:0:4:7" });
+      expect(draggedDown).toMatchObject({ key: "Research.md:2:0:4:7" });
     });
 
     it("reports nothing selected in the note for a bare cursor", () => {
