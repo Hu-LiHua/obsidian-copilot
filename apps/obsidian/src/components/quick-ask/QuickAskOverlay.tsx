@@ -1,13 +1,10 @@
 import { logWarn } from "@/logger";
-import { EditorView } from "@codemirror/view";
-import type { Editor } from "obsidian";
 import React from "react";
 import { Root } from "react-dom/client";
 import { updateDynamicStyleClass, clearDynamicStyleClass } from "@/utils/dom/dynamicStyleManager";
 import { QuickAskPanel } from "./QuickAskPanel";
+import type { QuickAskOverlayOptions } from "./types";
 import { createPluginRoot } from "@/utils/react/createPluginRoot";
-import type CopilotPlugin from "@/main";
-import type { ReplaceGuard } from "@/editor/replaceGuard";
 import type { ResizeDirection } from "@/hooks/use-resizable";
 
 const PANEL_MARGIN = 12;
@@ -25,17 +22,6 @@ interface AnchorRect {
   right: number;
   top: number;
   bottom: number;
-}
-
-interface QuickAskOverlayOptions {
-  plugin: CopilotPlugin;
-  editor: Editor;
-  view: EditorView;
-  selectedText: string;
-  selectionFrom: number;
-  selectionTo: number;
-  replaceGuard: ReplaceGuard;
-  onClose: () => void;
 }
 
 export class QuickAskOverlay {
@@ -190,13 +176,25 @@ export class QuickAskOverlay {
       return;
     }
 
+    if (this.options.renderPanel) {
+      this.root.render(
+        this.options.renderPanel({
+          onClose: this.closeWithAnimation,
+          onDragOffset: this.handleDragOffset,
+          onResizeStart: this.handleResizeStart,
+          hasCustomHeight: this.hasUserResizedHeight,
+        })
+      );
+      return;
+    }
+
     this.root.render(
       <QuickAskPanel
         plugin={this.options.plugin}
         editor={this.options.editor}
         view={this.options.view}
         selectedText={this.options.selectedText}
-        replaceGuard={this.options.replaceGuard}
+        replaceGuard={this.options.replaceGuard!}
         onClose={this.closeWithAnimation}
         onDragOffset={this.handleDragOffset}
         onResizeStart={this.handleResizeStart}
@@ -229,7 +227,7 @@ export class QuickAskOverlay {
         }
         this.overlayContainer?.removeEventListener("animationend", handleAnimationEnd);
         if (this.closeAnimationTimeout !== null) {
-          window.clearTimeout(this.closeAnimationTimeout);
+          (this.ownerWindow ?? window).clearTimeout(this.closeAnimationTimeout);
           this.closeAnimationTimeout = null;
         }
         this.options.onClose();

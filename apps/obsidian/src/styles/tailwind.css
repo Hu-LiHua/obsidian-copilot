@@ -952,12 +952,16 @@ If your plugin does not need CSS, delete this file.
   position: relative;
 }
 
-/* Override Obsidian's default contenteditable border. The extra ancestor and
-   explicit focus states outrank app/theme [contenteditable] and focus rules
+/* Override Obsidian's default contenteditable and textarea borders/backgrounds. The extra ancestor and
+   explicit focus states outrank app/theme input and focus rules
    (themes load after plugin CSS) without !important. */
 .copilot-quick-ask-overlay-root .copilot-quick-ask-overlay [contenteditable],
 .copilot-quick-ask-overlay-root .copilot-quick-ask-overlay [contenteditable]:focus,
-.copilot-quick-ask-overlay-root .copilot-quick-ask-overlay [contenteditable]:focus-visible {
+.copilot-quick-ask-overlay-root .copilot-quick-ask-overlay [contenteditable]:focus-visible,
+.copilot-quick-ask-overlay-root .copilot-quick-ask-overlay textarea,
+.copilot-quick-ask-overlay-root .copilot-quick-ask-overlay textarea:focus,
+.copilot-quick-ask-overlay-root .copilot-quick-ask-overlay textarea:focus-visible {
+  background: transparent;
   border: none;
   box-shadow: none;
   outline: none;

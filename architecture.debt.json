@@ -1,6 +1,6 @@
 {
   "counts": {
-    "imports": 739,
+    "imports": 738,
     "clientAccess": 151
   },
   "imports": {
@@ -837,7 +837,6 @@
       "@/LLMProviders/brevilabsClient"
     ],
     "apps/obsidian/src/components/quick-ask/QuickAskMessage.tsx": ["@/main"],
-    "apps/obsidian/src/components/quick-ask/QuickAskOverlay.tsx": ["@/main"],
     "apps/obsidian/src/components/quick-ask/types.ts": ["@/main"],
     "apps/obsidian/src/components/quick-ask/useQuickAskSession.ts": [
       "@/commands/customCommandUtils",
