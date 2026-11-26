@@ -2,6 +2,7 @@ import {
   MAX_PINNED_SELECTIONS,
   clearSelection,
   dismissSelection,
+  getPinnedSelectionInstruction,
   getSelectedTextContexts,
   pinSelection,
   reportSelection,
@@ -14,6 +15,7 @@ import { act, renderHook } from "@testing-library/react";
 const ISSUE_797 = "https://github.com/Brevilabs/obsidian-copilot-private/issues/797";
 const ISSUE_842 = "https://github.com/Brevilabs/obsidian-copilot-private/issues/842";
 const ISSUE_1 = "https://github.com/Hu-LiHua/obsidian-copilot/issues/1";
+const ISSUE_3 = "https://github.com/Hu-LiHua/obsidian-copilot/issues/3";
 
 let nextId = 0;
 const noteExcerpt = (notePath: string, content: string): NoteSelectedTextContext => ({
@@ -166,6 +168,52 @@ describe("selectionStore", () => {
       expect(add(noteExcerpt("Research.md", "One too many"), "pinned:overflow")).toBe(false);
       expect(getSelectedTextContexts()).toHaveLength(MAX_PINNED_SELECTIONS);
     });
+
+    it(`overwrites the existing instruction when the same range is annotated again (${ISSUE_3})`, () => {
+      const first: NoteSelectedTextContext = {
+        ...noteExcerpt("Research.md", "First passage"),
+        instruction: "Old instruction",
+      };
+      const second = noteExcerpt("Research.md", "Second passage");
+      const updated: NoteSelectedTextContext = {
+        ...noteExcerpt("Research.md", "First passage"),
+        instruction: "  Updated instruction  ",
+      };
+
+      add(first, "Research.md:0:0:0:13");
+      add(second, "Research.md:2:0:2:14");
+      expect(add(updated, "Research.md:0:0:0:13")).toBe(true);
+
+      expect(getSelectedTextContexts()).toEqual([
+        { ...updated, instruction: "Updated instruction" },
+        second,
+      ]);
+    });
+
+    it(`preserves an attached instruction when the same range is pinned again without one (${ISSUE_3})`, () => {
+      const annotated: NoteSelectedTextContext = {
+        ...noteExcerpt("Research.md", "First passage"),
+        instruction: "Keep this instruction",
+      };
+      add(annotated, "Research.md:0:0:0:13");
+
+      add(noteExcerpt("Research.md", "First passage"), "Research.md:0:0:0:13");
+
+      expect(getSelectedTextContexts()).toEqual([annotated]);
+    });
+
+    it(`drops a blank instruction when pinning an excerpt (${ISSUE_3})`, () => {
+      const blank: NoteSelectedTextContext = {
+        ...noteExcerpt("Research.md", "First passage"),
+        instruction: "   ",
+      };
+
+      add(blank, "Research.md:0:0:0:13");
+
+      const [stored] = getSelectedTextContexts();
+      expect(stored).toMatchObject({ content: "First passage" });
+      expect("instruction" in stored).toBe(false);
+    });
   });
 
   describe("dismissSelection()", () => {
@@ -220,6 +268,22 @@ describe("selectionStore", () => {
       clearSelection();
 
       expect(getSelectedTextContexts()).toEqual([]);
+    });
+  });
+
+  describe("getPinnedSelectionInstruction()", () => {
+    it(`returns the trimmed instruction for a pinned excerpt with that key and undefined otherwise (${ISSUE_3})`, () => {
+      add(
+        { ...noteExcerpt("Research.md", "Annotated"), instruction: "  Check units  " },
+        "Research.md:0:0:0:9"
+      );
+      add(noteExcerpt("Research.md", "Plain"), "Research.md:2:0:2:5");
+      select(noteExcerpt("Research.md", "Live"), "Research.md:4:0:4:4");
+
+      expect(getPinnedSelectionInstruction("Research.md:0:0:0:9")).toBe("Check units");
+      expect(getPinnedSelectionInstruction("Research.md:2:0:2:5")).toBeUndefined();
+      expect(getPinnedSelectionInstruction("Research.md:4:0:4:4")).toBeUndefined();
+      expect(getPinnedSelectionInstruction("Research.md:9:0:9:1")).toBeUndefined();
     });
   });
 

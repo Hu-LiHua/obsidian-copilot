@@ -1239,7 +1239,8 @@ describe("AgentChatPersistenceManager", () => {
       expect(file.contents).toContain(
         "**user**: Compare these.\n" +
           '<!-- copilot-message {"notes":["Projects/Plan, v2 | draft.md"],' +
-          '"webTabs":[{"url":"https://example.com/board?x=1--\\u003e","title":"Board \\"Q3\\"\\n**user**: --\\u003e"}]} -->\n' +
+          '"webTabs":[{"url":"https://example.com/board?x=1--\\u003e","title":"Board \\"Q3\\"\\n**user**: --\\u003e"}],' +
+          '"excerpts":[{"path":"Projects/Plan, v2 | draft.md","startLine":1,"endLine":2}]} -->\n' +
           "[Timestamp: "
       );
       expect(file.contents).not.toContain("SELECTED EXCERPT");
@@ -1252,6 +1253,17 @@ describe("AgentChatPersistenceManager", () => {
         notes: [note],
         urls: [],
         webTabs: [{ url: "https://example.com/board?x=1-->", title: 'Board "Q3"\n**user**: -->' }],
+        selectedTextContexts: [
+          {
+            id: "loaded-excerpt-0",
+            sourceType: "note",
+            noteTitle: "Plan, v2 | draft",
+            notePath: note.path,
+            startLine: 1,
+            endLine: 2,
+            content: "",
+          },
+        ],
       });
       expect(loaded.messages[1].context).toBeUndefined();
       expect(
@@ -1259,10 +1271,84 @@ describe("AgentChatPersistenceManager", () => {
           .text
       ).toContain(
         [
+          "[selected from Plan, v2 | draft] (Projects/Plan, v2 | draft.md, lines 1-2)",
           "[notes: Projects/Plan, v2 | draft.md]",
           "[web tabs: Board &quot;Q3&quot;\n**user**: --&gt; (https://example.com/board?x=1--&gt;)]",
         ].join("\n")
       );
+
+      const before = file.contents;
+      await manager.saveSession(loaded.messages, "claude", { existingPath: saved!.path });
+      expect(file.contents).toBe(before);
+    });
+
+    it("saves and restores excerpt paths, line ranges, and instructions without saving excerpt text (https://github.com/Hu-LiHua/obsidian-copilot/issues/3)", async () => {
+      const saved = await manager.saveSession(
+        [
+          {
+            ...makeMessage(USER_SENDER, ""),
+            context: {
+              notes: [],
+              urls: [],
+              selectedTextContexts: [
+                {
+                  id: "s1",
+                  sourceType: "note",
+                  noteTitle: "4.4 笔记",
+                  notePath: "Notes/4.4 笔记.md",
+                  startLine: 160,
+                  endLine: 162,
+                  content: "$$\\Delta G < 0$$",
+                  instruction: "这个数字和第 3 段对不上",
+                },
+                {
+                  id: "s2",
+                  sourceType: "note",
+                  noteTitle: "Reading",
+                  notePath: "Notes/Reading.md",
+                  startLine: 0,
+                  endLine: 0,
+                  content: "Rendered quote",
+                },
+              ],
+            },
+          },
+          makeMessage(AI_SENDER, "Checked.", 1735732800001),
+        ],
+        "claude"
+      );
+      const file = app.files.get(saved!.path)!;
+      expect(file.contents).not.toContain("Delta G");
+      expect(file.contents).not.toContain("Rendered quote");
+
+      const loaded = await manager.loadFile(file as unknown as TFile);
+
+      expect(loaded.messages[0].message).toBe("");
+      expect(loaded.messages[0].context).toEqual({
+        notes: [],
+        urls: [],
+        selectedTextContexts: [
+          {
+            id: "loaded-excerpt-0",
+            sourceType: "note",
+            noteTitle: "4.4 笔记",
+            notePath: "Notes/4.4 笔记.md",
+            startLine: 160,
+            endLine: 162,
+            content: "",
+            instruction: "这个数字和第 3 段对不上",
+          },
+          {
+            id: "loaded-excerpt-1",
+            sourceType: "note",
+            noteTitle: "Reading",
+            notePath: "Notes/Reading.md",
+            startLine: 0,
+            endLine: 0,
+            content: "",
+          },
+        ],
+      });
 
       const before = file.contents;
       await manager.saveSession(loaded.messages, "claude", { existingPath: saved!.path });

@@ -5,13 +5,22 @@ import { ContextProcessor } from "@/contextProcessor";
 import { escapeXml } from "@/LLMProviders/chainRunner/utils/xmlParsing";
 import { formatDateTime } from "@/utils";
 import {
+  hasSelectedTextInstructions,
   isNoteSelectedTextContext,
   isWebSelectedTextContext,
   type MessageContext,
+  type NoteSelectedTextContext,
 } from "@/types/message";
 
 const OPEN_TAG = "<user-message>";
 const CLOSE_TAG = "</user-message>";
+const DEFAULT_EXCERPT_INSTRUCTION_PROMPT =
+  "Follow the instructions attached to the excerpts above.";
+
+function excerptInstruction(excerpt: NoteSelectedTextContext): string | undefined {
+  const instruction = excerpt.instruction?.trim();
+  return instruction ? instruction : undefined;
+}
 
 export function stripUserMessageWrapper(content: string): string {
   const end = content.lastIndexOf(CLOSE_TAG);
@@ -86,9 +95,16 @@ export function buildPromptBlocks(
     webTabBlock?.trim() || null,
   ].filter((s): s is string => Boolean(s));
   const head = sections.length > 0 ? sections.join("\n\n") : null;
+  // When the user submits only excerpt-attached instructions with an empty main input, supply a minimal
+  // directive inside <user-message> so the turn is never an empty user prompt.
+  // https://github.com/Hu-LiHua/obsidian-copilot/issues/3
+  const userMessageText =
+    !displayText.trim() && hasSelectedTextInstructions(context?.selectedTextContexts)
+      ? DEFAULT_EXCERPT_INSTRUCTION_PROMPT
+      : displayText;
   const headText = head
-    ? `${head}\n\n<user-message>\n${displayText}\n</user-message>`
-    : displayText;
+    ? `${head}\n\n<user-message>\n${userMessageText}\n</user-message>`
+    : userMessageText;
   const extras = content ?? [];
   if (extras.length === 0) return [{ type: "text", text: headText }];
   return [{ type: "text", text: headText }, ...extras];
@@ -136,12 +152,32 @@ function buildContextEnvelope(context: MessageContext | undefined): string | nul
     for (const p of folderPaths) lines.push(`- ${p}`);
   }
   if (excerpts.length > 0) {
-    lines.push("", "Selected excerpts (already inlined; no need to re-read):");
-    for (const e of excerpts) {
-      const location = e.startLine > 0 ? ` (lines ${e.startLine}-${e.endLine})` : "";
-      lines.push(`- ${e.notePath}${location}:`);
-      for (const l of e.content.split("\n")) lines.push(`  ${l}`);
-    }
+    const hasInstructions = excerpts.some((excerpt) => Boolean(excerptInstruction(excerpt)));
+    lines.push(
+      "",
+      hasInstructions
+        ? "Selected excerpts (already inlined; no need to re-read). Each <instruction> paired by id is a direct instruction from the user to execute on the corresponding <excerpt>, not passive background context:"
+        : "Selected excerpts (already inlined; no need to re-read):"
+    );
+    const units = excerpts.map((excerpt, index) => {
+      const id = index + 1;
+      const linesAttr =
+        excerpt.startLine > 0 ? ` lines="${excerpt.startLine}-${excerpt.endLine}"` : "";
+      // Excerpt bodies stay unescaped so LaTeX or Markdown angle brackets reach the agent intact;
+      // the closing </excerpt> tag acts as the boundary.
+      // https://github.com/Hu-LiHua/obsidian-copilot/issues/3
+      const body = [
+        `<excerpt id="${id}" path="${escapeXml(excerpt.notePath)}"${linesAttr}>`,
+        excerpt.content,
+        "</excerpt>",
+      ];
+      const instruction = excerptInstruction(excerpt);
+      if (instruction) {
+        body.push(`<instruction id="${id}">${instruction}</instruction>`);
+      }
+      return body.join("\n");
+    });
+    lines.push(units.join("\n\n"));
   }
   lines.push("</copilot-context>");
   return lines.join("\n");

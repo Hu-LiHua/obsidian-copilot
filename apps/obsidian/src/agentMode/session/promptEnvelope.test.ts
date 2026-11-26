@@ -166,7 +166,7 @@ describe("promptEnvelope", () => {
       );
     });
 
-    it("inlines selected text excerpts with path and line range", () => {
+    it("inlines selected text excerpts as numbered <excerpt> units with path, line range, and unescaped content (https://github.com/Hu-LiHua/obsidian-copilot/issues/3)", () => {
       const blocks = buildPromptBlocks("explain", {
         notes: [],
         urls: [],
@@ -178,18 +178,94 @@ describe("promptEnvelope", () => {
             noteTitle: "copilot",
             startLine: 12,
             endLine: 18,
-            content: "line one\nline two",
+            content: "$$a < b & c > d$$\nline two",
           },
         ],
       });
       const text = (blocks[0] as { type: "text"; text: string }).text;
-      expect(text).toContain("Selected excerpts");
-      expect(text).toContain("- projects/copilot.md (lines 12-18):");
-      expect(text).toContain("  line one");
-      expect(text).toContain("  line two");
+      expect(text).toContain('<excerpt id="1" path="projects/copilot.md" lines="12-18">');
+      expect(text).toContain("$$a < b & c > d$$\nline two\n</excerpt>");
+      expect(text).not.toContain("&lt;");
+      expect(text).not.toContain("<instruction");
+      expect(text).not.toContain("direct instruction");
     });
 
-    it("inlines a Reading view excerpt without claiming source lines (https://github.com/Brevilabs/obsidian-copilot-private/issues/597)", () => {
+    it("pairs each excerpt instruction by id, tells the model instructions are direct requests, and keeps web selections separate (https://github.com/Hu-LiHua/obsidian-copilot/issues/3)", () => {
+      const blocks = buildPromptBlocks("这两段和网页说法对得上吗？", {
+        notes: [],
+        urls: [],
+        selectedTextContexts: [
+          {
+            id: "s1",
+            sourceType: "note",
+            notePath: "Notes/4.4 笔记.md",
+            noteTitle: "4.4 笔记",
+            startLine: 160,
+            endLine: 162,
+            content: "$$\\Delta G < 0$$",
+            instruction: "这个数字和第 3 段对不上",
+          },
+          {
+            id: "s2",
+            sourceType: "note",
+            notePath: "Notes/4.4 笔记.md",
+            noteTitle: "4.4 笔记",
+            startLine: 167,
+            endLine: 169,
+            content: "**例**：常温下水蒸气在过冷表面凝结。",
+          },
+          {
+            id: "w1",
+            sourceType: "web",
+            title: "Example",
+            url: "https://example.com",
+            content: "web snippet",
+          },
+        ],
+      });
+      const text = (blocks[0] as { type: "text"; text: string }).text;
+      expect(text).toContain("direct instruction");
+      expect(text).toContain(
+        [
+          '<excerpt id="1" path="Notes/4.4 笔记.md" lines="160-162">',
+          "$$\\Delta G < 0$$",
+          "</excerpt>",
+          '<instruction id="1">这个数字和第 3 段对不上</instruction>',
+          "",
+          '<excerpt id="2" path="Notes/4.4 笔记.md" lines="167-169">',
+          "**例**：常温下水蒸气在过冷表面凝结。",
+          "</excerpt>",
+        ].join("\n")
+      );
+      expect(text).not.toContain('<instruction id="2"');
+      expect(text).toContain("<web_selected_text>");
+      expect(text.indexOf("</copilot-context>")).toBeLessThan(text.indexOf("<web_selected_text>"));
+    });
+
+    it("fills <user-message> with a fallback instruction when the main input is empty and at least one excerpt has an instruction (https://github.com/Hu-LiHua/obsidian-copilot/issues/3)", () => {
+      const blocks = buildPromptBlocks("", {
+        notes: [],
+        urls: [],
+        selectedTextContexts: [
+          {
+            id: "s1",
+            sourceType: "note",
+            notePath: "Notes/4.4 笔记.md",
+            noteTitle: "4.4 笔记",
+            startLine: 160,
+            endLine: 162,
+            content: "$$\\Delta G < 0$$",
+            instruction: "Rewrite with subscripts",
+          },
+        ],
+      });
+      const text = (blocks[0] as { type: "text"; text: string }).text;
+      expect(text).toContain(
+        "<user-message>\nFollow the instructions attached to the excerpts above.\n</user-message>"
+      );
+    });
+
+    it("inlines a Reading view excerpt without claiming source lines (https://github.com/Brevilabs/obsidian-copilot-private/issues/597, https://github.com/Hu-LiHua/obsidian-copilot/issues/3)", () => {
       const blocks = buildPromptBlocks("explain", {
         notes: [],
         urls: [],
@@ -206,8 +282,10 @@ describe("promptEnvelope", () => {
         ],
       });
       const text = (blocks[0] as { type: "text"; text: string }).text;
-      expect(text).toContain("- projects/copilot.md:\n  Rendered note passage");
-      expect(text).not.toContain("(lines");
+      expect(text).toContain(
+        '<excerpt id="1" path="projects/copilot.md">\nRendered note passage\n</excerpt>'
+      );
+      expect(text).not.toContain("lines=");
     });
 
     it("appends image content blocks after the text envelope", () => {

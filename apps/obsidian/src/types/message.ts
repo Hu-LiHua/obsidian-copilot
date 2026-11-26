@@ -18,6 +18,7 @@ export interface NoteSelectedTextContext extends BaseSelectedTextContext {
   notePath: string;
   startLine: number;
   endLine: number;
+  instruction?: string;
 }
 
 export interface WebSelectedTextContext extends BaseSelectedTextContext {
@@ -37,6 +38,14 @@ export function isNoteSelectedTextContext(
   ctx: SelectedTextContext
 ): ctx is NoteSelectedTextContext {
   return ctx.sourceType === "note";
+}
+
+export function hasSelectedTextInstructions(
+  contexts: readonly SelectedTextContext[] | undefined
+): boolean {
+  return (contexts ?? []).some(
+    (ctx) => isNoteSelectedTextContext(ctx) && Boolean(ctx.instruction?.trim())
+  );
 }
 
 export interface WebTabContext {
