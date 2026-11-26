@@ -9,12 +9,16 @@ jest.mock("obsidian", () => {
 });
 
 import { registerSelectionToolbarIntegration } from "@/selection/selectionToolbarIntegration";
-import { clearSelection, getSelectedTextContexts } from "@/selection/selectionStore";
+import { clearSelection, getSelectedTextContexts, pinSelection } from "@/selection/selectionStore";
 import type CopilotPlugin from "@/main";
-import { editorInfoField, type Editor } from "obsidian";
+import type { EditorView } from "@codemirror/view";
+import { Notice, editorInfoField, type Editor } from "obsidian";
 import { mockTFile } from "@/__tests__/mockObsidian";
 
 const ISSUE_1 = "https://github.com/Hu-LiHua/obsidian-copilot/issues/1";
+const ISSUE_3 = "https://github.com/Hu-LiHua/obsidian-copilot/issues/3";
+const ADD_ACTION_ID = "copilot.add-selection-to-chat-context";
+const ANNOTATE_ACTION_ID = "copilot.annotate-selection";
 
 interface RegisteredAction {
   id: string;
@@ -25,9 +29,16 @@ interface RegisteredAction {
 
 const research = mockTFile({ path: "Research.md", basename: "Research" });
 
+const editorView = {
+  state: {
+    field: (field: unknown) => (field === editorInfoField ? { editor, file: research } : undefined),
+  },
+} as unknown as EditorView;
+
 const editor = {
-  offsetToPos: () => ({ line: 2, ch: 0 }),
+  offsetToPos: (offset: number) => (offset === 10 ? { line: 2, ch: 0 } : { line: 4, ch: 3 }),
   getRange: () => "An excerpt",
+  cm: editorView,
 } as unknown as Editor;
 
 const editorContext = {
@@ -47,12 +58,7 @@ const domEditorContext = {
   text: "An excerpt",
   from: 10,
   to: 20,
-  view: {
-    state: {
-      field: (field: unknown) =>
-        field === editorInfoField ? { editor, file: research } : undefined,
-    },
-  },
+  view: editorView,
 };
 
 function fakeHost() {
@@ -62,34 +68,51 @@ function fakeHost() {
     actions.push(action);
     return unregister;
   });
-  return { host: { getApi: () => ({ registerAction }) }, actions, registerAction, unregister };
+  const byId = (id: string) => {
+    const action = actions.findLast((item) => item.id === id);
+    if (!action) throw new Error(`Missing action ${id}`);
+    return action;
+  };
+  return {
+    host: { getApi: () => ({ registerAction }) },
+    actions,
+    byId,
+    registerAction,
+    unregister,
+  };
 }
 
-function fakePlugin(host: unknown) {
+function fakePlugin(host: unknown, { canAnnotate = true }: { canAnnotate?: boolean } = {}) {
   const cleanups: Array<() => void> = [];
+  const showSelectionAnnotation = jest.fn();
   const plugin = {
     app: { plugins: { plugins: host ? { "selection-toolbar": host } : {} } },
     activateChatViewForContext: jest.fn(),
+    canAnnotateSelection: jest.fn(() => canAnnotate),
+    showSelectionAnnotation,
     register: (cleanup: () => void) => cleanups.push(cleanup),
   } as unknown as CopilotPlugin;
-  return { plugin, cleanups };
+  return { plugin, cleanups, showSelectionAnnotation };
 }
 
 describe("selectionToolbarIntegration", () => {
-  beforeEach(() => clearSelection());
+  beforeEach(() => {
+    clearSelection();
+    jest.mocked(Notice).mockClear();
+  });
 
   describe("registerSelectionToolbarIntegration()", () => {
-    it(`registers a button that adds the selected text to the chat (${ISSUE_1})`, () => {
-      const { host, registerAction } = fakeHost();
+    it(`registers Add to Copilot and Annotate actions (${ISSUE_1}, ${ISSUE_3})`, () => {
+      const { host, actions, registerAction } = fakeHost();
       const { plugin } = fakePlugin(host);
 
       registerSelectionToolbarIntegration(plugin);
 
-      expect(registerAction).toHaveBeenCalledTimes(1);
-      expect(registerAction.mock.calls[0][0].id).toBe("copilot.add-selection-to-chat-context");
+      expect(registerAction).toHaveBeenCalledTimes(2);
+      expect(actions.map((action) => action.id)).toEqual([ADD_ACTION_ID, ANNOTATE_ACTION_ID]);
     });
 
-    it(`registers the button when the toolbar host loads after Copilot (${ISSUE_1})`, () => {
+    it(`registers the actions when the toolbar host loads after Copilot (${ISSUE_1}, ${ISSUE_3})`, () => {
       const { host, registerAction } = fakeHost();
       const { plugin } = fakePlugin(undefined);
 
@@ -101,80 +124,176 @@ describe("selectionToolbarIntegration", () => {
       ] = host;
       document.dispatchEvent(new CustomEvent("selection-toolbar:ready"));
 
-      expect(registerAction).toHaveBeenCalledTimes(1);
+      expect(registerAction).toHaveBeenCalledTimes(2);
     });
 
-    it(`registers the button again when the toolbar host reloads (${ISSUE_1})`, () => {
-      const { host, registerAction } = fakeHost();
+    it(`registers the actions again when the toolbar host reloads (${ISSUE_1}, ${ISSUE_3})`, () => {
+      const { host, registerAction, unregister } = fakeHost();
       const { plugin } = fakePlugin(host);
 
       registerSelectionToolbarIntegration(plugin);
       document.dispatchEvent(new CustomEvent("selection-toolbar:ready"));
 
-      expect(registerAction).toHaveBeenCalledTimes(2);
+      expect(unregister).toHaveBeenCalledTimes(2);
+      expect(registerAction).toHaveBeenCalledTimes(4);
     });
 
-    it(`offers the button only for a selection in a note (${ISSUE_1})`, () => {
-      const { host, actions } = fakeHost();
+    it(`offers Add to Copilot only for a selection in a note (${ISSUE_1})`, () => {
+      const { host, byId } = fakeHost();
+      const { plugin } = fakePlugin(host);
+
+      registerSelectionToolbarIntegration(plugin);
+      const addAction = byId(ADD_ACTION_ID);
+
+      expect(addAction.isAvailable(editorContext)).toBe(true);
+      expect(addAction.isAvailable({ surface: "reading", text: "An excerpt" })).toBe(false);
+      expect(addAction.isAvailable({ surface: "editor", text: "An excerpt" })).toBe(false);
+    });
+
+    it(`offers Add to Copilot for a selection the host resolved from the DOM (${ISSUE_1})`, () => {
+      const { host, byId } = fakeHost();
       const { plugin } = fakePlugin(host);
 
       registerSelectionToolbarIntegration(plugin);
 
-      expect(actions[0].isAvailable(editorContext)).toBe(true);
-      expect(actions[0].isAvailable({ surface: "reading", text: "An excerpt" })).toBe(false);
-      expect(actions[0].isAvailable({ surface: "editor", text: "An excerpt" })).toBe(false);
+      expect(byId(ADD_ACTION_ID).isAvailable(domEditorContext)).toBe(true);
     });
 
-    it(`offers the button for a selection the host resolved from the DOM (${ISSUE_1})`, () => {
-      const { host, actions } = fakeHost();
-      const { plugin } = fakePlugin(host);
-
-      registerSelectionToolbarIntegration(plugin);
-
-      expect(actions[0].isAvailable(domEditorContext)).toBe(true);
-    });
-
-    it(`does not offer the button for a selection whose note cannot be found (${ISSUE_1})`, () => {
-      const { host, actions } = fakeHost();
+    it(`does not offer Add to Copilot for a selection whose note cannot be found (${ISSUE_1})`, () => {
+      const { host, byId } = fakeHost();
       const { plugin } = fakePlugin(host);
 
       registerSelectionToolbarIntegration(plugin);
 
       expect(
-        actions[0].isAvailable({ surface: "editor", text: "An excerpt", from: 10, to: 20 })
+        byId(ADD_ACTION_ID).isAvailable({ surface: "editor", text: "An excerpt", from: 10, to: 20 })
       ).toBe(false);
     });
 
+    it(`offers Annotate only in editor mode when Agent Chat is the active destination (${ISSUE_3})`, () => {
+      const { host, byId } = fakeHost();
+      const { plugin } = fakePlugin(host, { canAnnotate: true });
+
+      registerSelectionToolbarIntegration(plugin);
+      const annotateAction = byId(ANNOTATE_ACTION_ID);
+
+      expect(annotateAction.isAvailable(domEditorContext)).toBe(true);
+      expect(annotateAction.isAvailable(editorContext)).toBe(true);
+      expect(annotateAction.isAvailable({ surface: "reading", text: "An excerpt" })).toBe(false);
+
+      const classic = fakeHost();
+      const classicPlugin = fakePlugin(classic.host, { canAnnotate: false });
+      registerSelectionToolbarIntegration(classicPlugin.plugin);
+      expect(classic.byId(ANNOTATE_ACTION_ID).isAvailable(domEditorContext)).toBe(false);
+    });
+
     it(`adds the selected text of a selection the host resolved from the DOM (${ISSUE_1})`, () => {
-      const { host, actions } = fakeHost();
+      const { host, byId } = fakeHost();
       const { plugin } = fakePlugin(host);
 
       registerSelectionToolbarIntegration(plugin);
-      actions[0].run(domEditorContext);
+      byId(ADD_ACTION_ID).run(domEditorContext);
 
       expect(getSelectedTextContexts().map((context) => context.content)).toEqual(["An excerpt"]);
       expect(plugin.activateChatViewForContext).toHaveBeenCalled();
     });
 
-    it(`adds the selected text to the chat context when the button is clicked (${ISSUE_1})`, () => {
-      const { host, actions } = fakeHost();
+    it(`adds the selected text to the chat context when Add to Copilot is clicked (${ISSUE_1})`, () => {
+      const { host, byId } = fakeHost();
       const { plugin } = fakePlugin(host);
 
       registerSelectionToolbarIntegration(plugin);
-      actions[0].run(editorContext);
+      byId(ADD_ACTION_ID).run(editorContext);
 
       expect(getSelectedTextContexts().map((context) => context.content)).toEqual(["An excerpt"]);
       expect(plugin.activateChatViewForContext).toHaveBeenCalled();
     });
 
-    it(`removes the button when the plugin unloads (${ISSUE_1})`, () => {
+    it(`opens the annotation overlay without pinning or activating chat, pre-fills an existing instruction, and pins only on submit (${ISSUE_3})`, () => {
+      const { host, byId } = fakeHost();
+      const { plugin, showSelectionAnnotation } = fakePlugin(host);
+      pinSelection({
+        location: "Research.md",
+        key: "Research.md:2:0:4:3",
+        context: {
+          id: "existing-1",
+          content: "An excerpt",
+          sourceType: "note",
+          noteTitle: "Research",
+          notePath: "Research.md",
+          startLine: 3,
+          endLine: 5,
+          instruction: "Previous note",
+        },
+      });
+
+      registerSelectionToolbarIntegration(plugin);
+      byId(ANNOTATE_ACTION_ID).run(domEditorContext);
+
+      expect(plugin.activateChatViewForContext).not.toHaveBeenCalled();
+      expect(showSelectionAnnotation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          view: editorView,
+          from: 10,
+          to: 20,
+          locationLabel: "L3-5",
+          initialInstruction: "Previous note",
+        })
+      );
+
+      const request = showSelectionAnnotation.mock.calls[0][0] as {
+        onSubmit: (instruction: string) => boolean;
+      };
+      expect(typeof request.onSubmit).toBe("function");
+      expect(request.onSubmit("New instruction")).toBe(true);
+      expect(plugin.activateChatViewForContext).not.toHaveBeenCalled();
+      expect(getSelectedTextContexts()).toEqual([
+        expect.objectContaining({
+          content: "An excerpt",
+          startLine: 3,
+          endLine: 5,
+          instruction: "New instruction",
+        }),
+      ]);
+    });
+
+    it(`preserves the plugin receiver when Annotate opens the annotation overlay on a class instance (${ISSUE_3})`, () => {
+      const { host, byId } = fakeHost();
+      const showAnnotation = jest.fn();
+      class ClassPlugin {
+        app = { plugins: { plugins: { "selection-toolbar": host } } };
+        private readonly controller = { showAnnotation };
+        activateChatViewForContext = jest.fn();
+        register = jest.fn();
+        canAnnotateSelection() {
+          return Boolean(this.controller);
+        }
+        showSelectionAnnotation(request: unknown) {
+          this.controller.showAnnotation(request);
+        }
+      }
+
+      registerSelectionToolbarIntegration(new ClassPlugin() as unknown as CopilotPlugin);
+      byId(ANNOTATE_ACTION_ID).run(domEditorContext);
+
+      expect(showAnnotation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          view: editorView,
+          from: 10,
+          to: 20,
+          locationLabel: "L3-5",
+        })
+      );
+    });
+
+    it(`removes both buttons when the plugin unloads (${ISSUE_1}, ${ISSUE_3})`, () => {
       const { host, unregister } = fakeHost();
       const { plugin, cleanups } = fakePlugin(host);
 
       registerSelectionToolbarIntegration(plugin);
       cleanups.forEach((cleanup) => cleanup());
 
-      expect(unregister).toHaveBeenCalled();
+      expect(unregister).toHaveBeenCalledTimes(2);
     });
   });
 });

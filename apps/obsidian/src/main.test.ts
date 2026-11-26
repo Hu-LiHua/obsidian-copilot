@@ -1170,6 +1170,34 @@ describe("main", () => {
       });
     });
 
+    describe("canAnnotateSelection()", () => {
+      it("returns true only when Agent Chat is the active context destination (https://github.com/Hu-LiHua/obsidian-copilot/issues/3)", () => {
+        const plugin = Object.create(CopilotPlugin.prototype) as CopilotPlugin;
+        Object.assign(plugin, {
+          agentSessionManager: {},
+          app: { workspace: { getLeavesOfType: jest.fn(() => []) } },
+        });
+        (isDesktopRuntime as jest.Mock).mockReturnValue(true);
+        expect(plugin.canAnnotateSelection()).toBe(true);
+
+        (isDesktopRuntime as jest.Mock).mockReturnValue(false);
+        expect(plugin.canAnnotateSelection()).toBe(false);
+      });
+    });
+
+    describe("showSelectionAnnotation()", () => {
+      it("delegates opening the annotation overlay to quickAskController (https://github.com/Hu-LiHua/obsidian-copilot/issues/3)", () => {
+        const plugin = Object.create(CopilotPlugin.prototype) as CopilotPlugin;
+        const showAnnotation = jest.fn();
+        Object.assign(plugin, { quickAskController: { showAnnotation } });
+        const request = { locationLabel: "L3-5" } as never;
+
+        plugin.showSelectionAnnotation(request);
+
+        expect(showAnnotation).toHaveBeenCalledWith(request);
+      });
+    });
+
     describe("newAgentChatWithDraft()", () => {
       beforeEach(() => {
         jest.clearAllMocks();
