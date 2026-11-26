@@ -158,6 +158,31 @@ describe("AgentTrail", () => {
     expect(insertAtCursor).toHaveBeenCalledWith(app, "I asked Maya.\n\nMaya found one wrong year.");
   });
 
+  it("https://github.com/Hu-LiHua/obsidian-copilot/issues/2 drags the response's text from the row under it", () => {
+    renderTrail({
+      parts: [text("Maya found one wrong year.")],
+      responseText: "I asked Maya.\n\nMaya found one wrong year.",
+    });
+
+    const row = screen.getByTitle("Copy").closest("[data-response-footer]");
+    expect(row).not.toBeNull();
+    const dataTransfer = { effectAllowed: "", setData: jest.fn() } as unknown as DataTransfer;
+
+    const pointer = new MouseEvent("pointerdown", {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+    });
+    Object.defineProperty(pointer, "isPrimary", { value: true });
+    fireEvent(row!, pointer);
+    fireEvent.dragStart(row!, { dataTransfer });
+
+    expect(dataTransfer.setData).toHaveBeenCalledWith(
+      "text/plain",
+      "I asked Maya.\n\nMaya found one wrong year."
+    );
+  });
+
   it("https://github.com/Brevilabs/obsidian-copilot-private/issues/971 renders no row under a reply inside a response, whose row sits at the response's end", () => {
     renderTrail({ hideFooter: true, turnDurationMs: 12_000, timestampMs: SENT_AT });
 

@@ -33,13 +33,14 @@ import {
 import { AgentReasoningBlock } from "@/components/chat-components/AgentReasoningBlock";
 import { ClampedContent } from "@/components/ui/clamped-content";
 import { USER_SENDER } from "@/constants";
+import { useMessageDrag } from "@/hooks/useMessageDrag";
 import { cn } from "@/lib/utils";
 import { parseToolCallMarkers } from "@/LLMProviders/chainRunner/utils/toolCallParser";
 import { parseReasoningBlock } from "@/LLMProviders/chainRunner/utils/AgentReasoningState";
 import { processInlineCitations } from "@/LLMProviders/chainRunner/utils/citationUtils";
 import { logError } from "@/logger";
 import { ChatMessage } from "@/types/message";
-import { extractYoutubeVideoId, insertAtCursor } from "@/utils";
+import { cleanMessageForCopy, extractYoutubeVideoId, insertAtCursor } from "@/utils";
 import { preprocessAIResponse } from "@/utils/markdownPreprocess";
 import { renderMarkdown } from "@/utils/renderMarkdown";
 import { StreamingTextFade } from "@/utils/streamingTextFade";
@@ -799,6 +800,11 @@ const ChatSingleMessage: React.FC<ChatSingleMessageProps> = ({
   };
 
   const replyText = responseText ?? message.message;
+  const copyText = cleanMessageForCopy(replyText);
+  const drag = useMessageDrag({
+    text: copyText,
+    enabled: message.sender !== USER_SENDER,
+  });
   const handleInsertIntoEditor = () => {
     void insertAtCursor(app, replyText);
   };
@@ -887,6 +893,7 @@ const ChatSingleMessage: React.FC<ChatSingleMessageProps> = ({
   const footer =
     isStreaming || hideFooter ? null : (
       <AssistantResponseFooter
+        drag={drag}
         leading={footerStart}
         timestampMs={message.timestamp?.epoch}
         shownAtRest={isUserMessage}
@@ -909,10 +916,7 @@ const ChatSingleMessage: React.FC<ChatSingleMessageProps> = ({
   return (
     <div className="tw-group/message tw-relative tw-my-1 tw-flex tw-w-full tw-flex-col">
       <div
-        className={cn(
-          "tw-mx-2 tw-rounded-md tw-p-2",
-          isUserMessage && "tw-border tw-border-solid tw-border-border"
-        )}
+        className={cn("tw-mx-2 tw-rounded-md tw-border tw-border-solid tw-border-border tw-p-2")}
         style={
           message.sender === USER_SENDER
             ? { backgroundColor: "var(--background-modifier-hover)" }

@@ -3,7 +3,7 @@ import {
   type AssistantResponseFooterProps,
 } from "@/components/ui/AssistantResponseFooter";
 import { formatMessageClock, formatMessageDateTime } from "@/lib/messageTime";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { Platform } from "obsidian";
 import React from "react";
 
@@ -47,6 +47,29 @@ describe("AssistantResponseFooter", () => {
 
       expect(screen.getByText("Actions")).toBeTruthy();
       expect(container.querySelector("[data-response-footer-leading]")).toBeNull();
+    });
+
+    it("https://github.com/Hu-LiHua/obsidian-copilot/issues/2 hands the drag to the row", () => {
+      const onDragStart = jest.fn();
+      const { container } = renderFooter({
+        drag: { onPointerDown: jest.fn(), onDragStart },
+      });
+
+      fireEvent.dragStart(footerOf(container), { dataTransfer: {} });
+
+      expect(onDragStart).toHaveBeenCalled();
+    });
+
+    it("https://github.com/Hu-LiHua/obsidian-copilot/issues/2 does not drag on a phone, which has no pointer to drag with", () => {
+      Platform.isMobile = true;
+      const onDragStart = jest.fn();
+      const { container } = renderFooter({
+        drag: { onPointerDown: jest.fn(), onDragStart },
+      });
+
+      fireEvent.dragStart(footerOf(container), { dataTransfer: {} });
+
+      expect(onDragStart).not.toHaveBeenCalled();
     });
 
     it("https://github.com/Brevilabs/obsidian-copilot-private/issues/971 dims the row and hides its time at rest, and brings both to full strength while the pointer or keyboard focus is on its response", () => {
