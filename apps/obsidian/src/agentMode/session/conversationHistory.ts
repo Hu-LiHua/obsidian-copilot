@@ -39,11 +39,20 @@ function renderMessageContext(context: MessageContext | undefined): string[] {
   const lines: string[] = [];
 
   for (const sel of context.selectedTextContexts ?? []) {
-    const label = isNoteSelectedTextContext(sel)
-      ? sel.noteTitle
-      : isWebSelectedTextContext(sel)
-        ? sel.title || sel.url
-        : "selection";
+    if (isNoteSelectedTextContext(sel)) {
+      const location = sel.startLine > 0 ? `, lines ${sel.startLine}-${sel.endLine}` : "";
+      lines.push(`[selected from ${sel.noteTitle}] (${sel.notePath}${location})`);
+      const excerpt = trimHead(
+        sel.content.trim(),
+        CONVERSATION_HISTORY_TOOL_OUTPUT_MAX_CHARS,
+        CONVERSATION_HISTORY_TURN_TRUNCATION_MARKER
+      );
+      if (excerpt) lines.push(excerpt);
+      const instruction = sel.instruction?.trim();
+      if (instruction) lines.push(`[instruction: ${instruction}]`);
+      continue;
+    }
+    const label = isWebSelectedTextContext(sel) ? sel.title || sel.url : "selection";
     const excerpt = trimHead(
       sel.content.trim(),
       CONVERSATION_HISTORY_TOOL_OUTPUT_MAX_CHARS,

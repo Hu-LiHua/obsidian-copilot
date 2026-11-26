@@ -14,6 +14,7 @@ import { getDomainFromUrl } from "@/utils";
 import { cn } from "@/lib/utils";
 import { ContextBadgeWrapper } from "./ContextBadgeWrapper";
 import { SelectedTextContext, WebTabContext, isWebSelectedTextContext } from "@/types/message";
+import { formatExcerptLocationLabel } from "@/utils/excerptLocation";
 
 interface BaseContextBadgeProps {
   onRemove?: () => void;
@@ -236,16 +237,16 @@ export function ContextSelectedTextBadge({
   const normalizedContent = selectedText.content.replace(/\s+/g, " ").trim();
 
   const isWebSelection = isWebSelectedTextContext(selectedText);
-  const location =
-    isWebSelection || selectedText.startLine === 0
-      ? "Selection"
-      : selectedText.startLine === selectedText.endLine
-        ? `L${selectedText.startLine}`
-        : `L${selectedText.startLine}-${selectedText.endLine}`;
+  const badgeLabel =
+    normalizedContent ||
+    (isWebSelection ? selectedText.title || selectedText.url : selectedText.noteTitle);
+  const location = isWebSelection
+    ? "Selection"
+    : formatExcerptLocationLabel(selectedText.startLine, selectedText.endLine);
   const source = isWebSelection ? selectedText.url : `${selectedText.notePath} (${location})`;
   const tooltipContent = (
     <div className="tw-max-h-60 tw-overflow-y-auto tw-text-left">
-      <div className="tw-whitespace-pre-wrap">{selectedText.content}</div>
+      {selectedText.content && <div className="tw-whitespace-pre-wrap">{selectedText.content}</div>}
       <div className="tw-text-faint">{source}</div>
     </div>
   );
@@ -256,7 +257,7 @@ export function ContextSelectedTextBadge({
       onRemove={onRemove}
     >
       <TruncatedText className="tw-max-w-40" tooltipContent={tooltipContent} alwaysShowTooltip>
-        {normalizedContent}
+        {badgeLabel}
       </TruncatedText>
       <span className="tw-text-xs tw-text-faint">{location}</span>
     </ContextBadgeWrapper>

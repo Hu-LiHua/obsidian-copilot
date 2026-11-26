@@ -10,7 +10,12 @@ import { AGENT_CHAT_MODE, AI_SENDER, COPILOT_CONVERSATION_TAG, USER_SENDER } fro
 import { logError, logInfo, logWarn } from "@/logger";
 import { getSettings } from "@/settings/model";
 import { getEffectiveConversationsFolder } from "@/settings/copilotFolder";
-import { FormattedDateTime, type MessageContext } from "@/types/message";
+import {
+  FormattedDateTime,
+  isNoteSelectedTextContext,
+  type MessageContext,
+  type NoteSelectedTextContext,
+} from "@/types/message";
 import {
   ensureFolderExists,
   formatDateTime,
@@ -26,7 +31,7 @@ import {
 } from "@/utils/vaultAdapterUtils";
 import { formatChatNoteMessage } from "@/utils/chatHistoryUtils";
 import { isRecord } from "@/utils/obsidianInternals";
-import { joinPosix } from "@/utils/pathUtils";
+import { basename, joinPosix } from "@/utils/pathUtils";
 import { getVaultBase } from "@/utils/vaultPath";
 import { parseYaml, TFile, type App } from "obsidian";
 import {
@@ -53,6 +58,13 @@ const MESSAGE_DATA_LINE = /(?:^|\r?\n)<!-- copilot-message ([^>\r\n]*) -->$/;
 const LABEL_LINE = /^(\*\*(?:user|ai)\*\*)(\\*): /gm;
 const ESCAPED_LABEL_LINE = /^(\*\*(?:user|ai)\*\*)\\(\\*): /gm;
 
+interface SavedExcerptData {
+  path: string;
+  startLine?: number;
+  endLine?: number;
+  instruction?: string;
+}
+
 interface SavedMessageData {
   tools?: readonly string[];
   // A reopened or continued chat gets its attached context back only from the note; JSON keeps paths holding ", " or " | " whole.
@@ -61,6 +73,10 @@ interface SavedMessageData {
   folders?: string[];
   webTabs?: { url: string; title?: string }[];
   teammates?: string[];
+  // Chat notes persist excerpt paths, line ranges, and user instructions without excerpt text so
+  // reopened chats do not carry stale copies of note content.
+  // https://github.com/Hu-LiHua/obsidian-copilot/issues/3
+  excerpts?: SavedExcerptData[];
   // A custom agent's save lines come back with the chat only from its note; a build without custom agents ignores the key and shows the reply as ordinary text.
   // https://github.com/Brevilabs/obsidian-copilot-private/issues/942
   memorySaves?: unknown;
@@ -112,6 +128,22 @@ function savedContext(context: MessageContext | undefined): SavedMessageData {
   if (context?.agents?.length) saved.teammates = context.agents;
   if (context?.webTabs?.length)
     saved.webTabs = context.webTabs.map(({ url, title }) => ({ url, title }));
+  const excerpts = (context?.selectedTextContexts ?? [])
+    .filter(isNoteSelectedTextContext)
+    .map((excerpt): SavedExcerptData => {
+      const instruction = excerpt.instruction?.trim();
+      return {
+        path: excerpt.notePath,
+        ...(excerpt.startLine > 0
+          ? {
+              startLine: excerpt.startLine,
+              endLine: excerpt.endLine > 0 ? excerpt.endLine : excerpt.startLine,
+            }
+          : {}),
+        ...(instruction ? { instruction } : {}),
+      };
+    });
+  if (excerpts.length > 0) saved.excerpts = excerpts;
   return saved;
 }
 
@@ -129,7 +161,50 @@ function loadedContext(saved: SavedMessageData, app: App): MessageContext | unde
   const agents = (Array.isArray(saved.teammates) ? saved.teammates : []).filter(
     (name) => typeof name === "string"
   );
-  if (notes.length === 0 && webTabs.length === 0 && folders.length === 0 && agents.length === 0)
+  const selectedTextContexts = (Array.isArray(saved.excerpts) ? saved.excerpts : []).flatMap(
+    (entry, index): NoteSelectedTextContext[] => {
+      if (!isRecord(entry) || typeof entry.path !== "string" || !entry.path.trim()) return [];
+      const file = app.vault.getAbstractFileByPath(entry.path);
+      const startLine =
+        typeof entry.startLine === "number" &&
+        Number.isSafeInteger(entry.startLine) &&
+        entry.startLine > 0
+          ? entry.startLine
+          : 0;
+      const endLine =
+        startLine > 0 &&
+        typeof entry.endLine === "number" &&
+        Number.isSafeInteger(entry.endLine) &&
+        entry.endLine >= startLine
+          ? entry.endLine
+          : startLine;
+      const instruction =
+        typeof entry.instruction === "string" && entry.instruction.trim()
+          ? entry.instruction.trim()
+          : undefined;
+      const noteTitle =
+        file instanceof TFile ? file.basename : basename(entry.path).replace(/\.[^.]+$/, "");
+      return [
+        {
+          id: `loaded-excerpt-${index}`,
+          sourceType: "note",
+          noteTitle,
+          notePath: entry.path,
+          startLine,
+          endLine,
+          content: "",
+          ...(instruction ? { instruction } : {}),
+        },
+      ];
+    }
+  );
+  if (
+    notes.length === 0 &&
+    webTabs.length === 0 &&
+    folders.length === 0 &&
+    agents.length === 0 &&
+    selectedTextContexts.length === 0
+  )
     return undefined;
   return {
     notes,
@@ -137,6 +212,7 @@ function loadedContext(saved: SavedMessageData, app: App): MessageContext | unde
     ...(folders.length > 0 ? { folders } : {}),
     ...(webTabs.length > 0 ? { webTabs } : {}),
     ...(agents.length > 0 ? { agents } : {}),
+    ...(selectedTextContexts.length > 0 ? { selectedTextContexts } : {}),
   };
 }
 

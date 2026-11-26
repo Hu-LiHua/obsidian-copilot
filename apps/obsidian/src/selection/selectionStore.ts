@@ -49,20 +49,50 @@ export function reportSelection(report: SelectionReport): void {
   settingsStore.set(liveAtom, report);
 }
 
+function normalizeSelection(selection: KeyedSelection): KeyedSelection {
+  if (selection.context.sourceType !== "note" || selection.context.instruction === undefined) {
+    return selection;
+  }
+  const instruction = selection.context.instruction.trim();
+  if (instruction) {
+    return instruction === selection.context.instruction
+      ? selection
+      : { ...selection, context: { ...selection.context, instruction } };
+  }
+  const context = { ...selection.context };
+  delete context.instruction;
+  return { ...selection, context };
+}
+
 // An explicitly added excerpt joins the excerpts already attached, so one message can point at several
 // passages of a note; a fresh selection still replaces only the excerpt it is showing.
 // https://github.com/Hu-LiHua/obsidian-copilot/issues/1
 export function pinSelection(selection: KeyedSelection): boolean {
+  const normalized = normalizeSelection(selection);
   const pinned = settingsStore.get(pinnedAtom);
   const live = settingsStore.get(liveAtom);
-  if (pinned.some((pinnedSelection) => pinnedSelection.key === selection.key)) {
+  const replacesLive = live?.key === normalized.key;
+  const existingIndex = pinned.findIndex(
+    (pinnedSelection) => pinnedSelection.key === normalized.key
+  );
+  if (existingIndex !== -1) {
+    // Re-annotating the same character range replaces the previous instruction in place, while adding the
+    // bare selection again keeps any instruction already attached.
+    // https://github.com/Hu-LiHua/obsidian-copilot/issues/3
+    if (normalized.context.sourceType === "note" && normalized.context.instruction !== undefined) {
+      const next = [...pinned];
+      next[existingIndex] = normalized;
+      settingsStore.set(pinnedAtom, next);
+    }
+    if (replacesLive) {
+      settingsStore.set(liveAtom, null);
+    }
     return true;
   }
-  const replacesLive = live?.key === selection.key;
   if (!replacesLive && pinned.length >= MAX_PINNED_SELECTIONS) {
     return false;
   }
-  settingsStore.set(pinnedAtom, [...pinned, selection]);
+  settingsStore.set(pinnedAtom, [...pinned, normalized]);
   if (replacesLive) {
     settingsStore.set(liveAtom, null);
   }
@@ -85,6 +115,14 @@ export function dismissSelection(id: string): void {
 export function clearSelection(): void {
   settingsStore.set(liveAtom, null);
   settingsStore.set(pinnedAtom, NO_PINNED);
+}
+
+export function getPinnedSelectionInstruction(key: string): string | undefined {
+  const match = settingsStore
+    .get(pinnedAtom)
+    .find((pinnedSelection) => pinnedSelection.key === key);
+  if (!match || match.context.sourceType !== "note") return undefined;
+  return match.context.instruction;
 }
 
 export function getSelectedTextContexts(): SelectedTextContext[] {

@@ -391,6 +391,49 @@ describe("conversationHistory", () => {
       expect(block).toContain("the fan-out renderer drops context");
     });
 
+    it("includes excerpt path, line range, and instruction in history when a reopened note omitted excerpt text (https://github.com/Hu-LiHua/obsidian-copilot/issues/3)", () => {
+      const msg = withContext(USER_SENDER, "", {
+        notes: [],
+        urls: [],
+        selectedTextContexts: [
+          {
+            id: "loaded-excerpt-0",
+            sourceType: "note",
+            noteTitle: "4.4 笔记",
+            notePath: "Notes/4.4 笔记.md",
+            startLine: 160,
+            endLine: 162,
+            content: "",
+            instruction: "这个数字和第 3 段对不上",
+          },
+          {
+            id: "loaded-excerpt-1",
+            sourceType: "note",
+            noteTitle: "Reading",
+            notePath: "Notes/Reading.md",
+            startLine: 0,
+            endLine: 0,
+            content: "",
+          },
+        ],
+      });
+      const block = buildConversationHistoryBlock(
+        [msg],
+        SAVED_HISTORY_MAX_CHARS,
+        null,
+        noSavedImages
+      )!.text;
+      expect(block).toContain(
+        [
+          "[context]",
+          "[selected from 4.4 笔记] (Notes/4.4 笔记.md, lines 160-162)",
+          "[instruction: 这个数字和第 3 段对不上]",
+          "[selected from Reading] (Notes/Reading.md)",
+        ].join("\n")
+      );
+      expect(block).not.toContain("lines 0-0");
+    });
+
     it("names a reopened chat's attached notes by path with its web tabs (https://github.com/Brevilabs/obsidian-copilot-private/issues/920)", () => {
       const msg = withContext(USER_SENDER, "compare these", {
         notes: [{ path: "Projects/Plan, v2 | draft.md" } as MessageContext["notes"][number]],

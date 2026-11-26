@@ -138,5 +138,41 @@ describe("ContextBadges", () => {
       fireEvent.keyDown(screen.getByTestId("label").parentElement!, { key: "Enter" });
       expect(onRemove).toHaveBeenCalledTimes(1);
     });
+
+    it("renders an annotated excerpt badge identically without showing the instruction or reacting to clicks (https://github.com/Hu-LiHua/obsidian-copilot/issues/3)", () => {
+      const onClick = jest.fn();
+      render(
+        <ContextSelectedTextBadge
+          selectedText={{
+            ...note,
+            content: "Selected passage",
+            instruction: "Do not reveal in badge",
+          }}
+          onClick={onClick}
+        />
+      );
+
+      expect(screen.getByTestId("label").textContent).toBe("Selected passage");
+      expect(screen.getByText("L2-3")).toBeTruthy();
+      expect(screen.getByRole("tooltip").textContent).not.toContain("Do not reveal in badge");
+      fireEvent.click(screen.getByTestId("label"));
+      expect(onClick).not.toHaveBeenCalled();
+    });
+
+    it("falls back to the note title when a reopened chat excerpt omitted its text (https://github.com/Hu-LiHua/obsidian-copilot/issues/3)", () => {
+      render(
+        <ContextSelectedTextBadge
+          selectedText={{
+            ...note,
+            content: "",
+            instruction: "Saved instruction",
+          }}
+        />
+      );
+
+      expect(screen.getByTestId("label").textContent).toBe("Research");
+      expect(screen.getByText("L2-3")).toBeTruthy();
+      expect(screen.getByRole("tooltip").textContent).toBe("Projects/Research.md (L2-3)");
+    });
   });
 });
