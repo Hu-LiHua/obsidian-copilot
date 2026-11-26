@@ -304,6 +304,43 @@ describe("AgentChatInput", () => {
       });
     });
 
+    it("sends with an empty main input when an attached note excerpt has an instruction, and skips empty sends without instructions https://github.com/Hu-LiHua/obsidian-copilot/issues/3", async () => {
+      const unannotated: NoteSelectedTextContext = {
+        id: "plain-excerpt",
+        sourceType: "note",
+        noteTitle: "4.4 笔记",
+        notePath: "Notes/4.4 笔记.md",
+        content: "$$\\Delta G < 0$$",
+        startLine: 160,
+        endLine: 162,
+      };
+      const annotated: NoteSelectedTextContext = {
+        ...unannotated,
+        id: "annotated-excerpt",
+        instruction: "Rewrite with subscripts",
+      };
+      const backend = {
+        sendMessage: jest.fn(() => ({ turn: Promise.resolve() })),
+        takeWithdrawnPrompts: () => [],
+      } as unknown as AgentChatBackend;
+
+      mockSelectedTextContexts = [unannotated];
+      const view = renderInput(backend, makeDraft({ input: "" }));
+      fireEvent.click(screen.getByText("send"));
+      expect(backend.sendMessage).not.toHaveBeenCalled();
+
+      mockSelectedTextContexts = [annotated];
+      view.rerender(inputNode(backend, makeDraft({ input: "" })));
+      fireEvent.click(screen.getByText("send"));
+
+      await waitFor(() => expect(backend.sendMessage).toHaveBeenCalledTimes(1));
+      expect(jest.mocked(backend.sendMessage).mock.calls[0]).toEqual([
+        "",
+        { notes: [], urls: [], selectedTextContexts: [annotated] },
+        undefined,
+      ]);
+    });
+
     it("hints at @ for context and / for commands, naming the agent when one is given (https://github.com/Brevilabs/obsidian-copilot-private/issues/588)", () => {
       const backend = { takeWithdrawnPrompts: () => [] } as unknown as AgentChatBackend;
       const { unmount } = renderInput(backend, makeDraft());

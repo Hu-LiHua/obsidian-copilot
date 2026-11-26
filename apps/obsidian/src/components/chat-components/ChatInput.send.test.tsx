@@ -344,5 +344,92 @@ describe("ChatInput", () => {
 
       expect(send).toHaveBeenCalledWith(expect.not.objectContaining({ interrupt: true }));
     });
+
+    it("enables Send and routes Enter for an empty Agent draft when an excerpt carries an instruction (https://github.com/Hu-LiHua/obsidian-copilot/issues/3)", () => {
+      const { node, send } = composer("", [], {
+        selectedTextContexts: [
+          {
+            id: "s1",
+            sourceType: "note",
+            noteTitle: "4.4 笔记",
+            notePath: "Notes/4.4 笔记.md",
+            startLine: 160,
+            endLine: 162,
+            content: "$$\\Delta G < 0$$",
+            instruction: "Use subscripts",
+          },
+        ],
+      });
+      render(node);
+
+      const button = screen.getByRole<HTMLButtonElement>("button", { name: "Send" });
+      expect(button.disabled).toBe(false);
+      fireEvent.click(button);
+      fireEvent.keyDown(screen.getByRole("textbox", { name: "Message" }), { key: "Enter" });
+      expect(send).toHaveBeenCalledTimes(2);
+    });
+
+    it("shows Send while generating in Agent Mode when the draft is empty and an excerpt carries an instruction (https://github.com/Hu-LiHua/obsidian-copilot/issues/3)", () => {
+      const { node, send } = composer("", [], {
+        isGenerating: true,
+        selectedTextContexts: [
+          {
+            id: "s1",
+            sourceType: "note",
+            noteTitle: "4.4 笔记",
+            notePath: "Notes/4.4 笔记.md",
+            startLine: 160,
+            endLine: 162,
+            content: "$$\\Delta G < 0$$",
+            instruction: "Use subscripts",
+          },
+        ],
+      });
+      render(node);
+
+      expect(screen.queryByRole("button", { name: "Stop generating" })).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Send" }));
+      expect(send).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps Send disabled for an empty draft when excerpts have no instruction or when in classic chat (https://github.com/Hu-LiHua/obsidian-copilot/issues/3)", () => {
+      const { unmount } = render(
+        composer("", [], {
+          isAgentMode: true,
+          selectedTextContexts: [
+            {
+              id: "s1",
+              sourceType: "note",
+              noteTitle: "4.4 笔记",
+              notePath: "Notes/4.4 笔记.md",
+              startLine: 160,
+              endLine: 162,
+              content: "$$\\Delta G < 0$$",
+            },
+          ],
+        }).node
+      );
+      expect(screen.getByRole<HTMLButtonElement>("button", { name: "Send" }).disabled).toBe(true);
+      unmount();
+
+      render(
+        composer("", [], {
+          isAgentMode: false,
+          selectedTextContexts: [
+            {
+              id: "s2",
+              sourceType: "note",
+              noteTitle: "4.4 笔记",
+              notePath: "Notes/4.4 笔记.md",
+              startLine: 160,
+              endLine: 162,
+              content: "$$\\Delta G < 0$$",
+              instruction: "Should not enable classic chat",
+            },
+          ],
+        }).node
+      );
+      expect(screen.getByRole<HTMLButtonElement>("button", { name: "Send" }).disabled).toBe(true);
+    });
   });
 });

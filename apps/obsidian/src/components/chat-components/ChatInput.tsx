@@ -10,7 +10,7 @@ import {
   normalizeWebTabContext,
 } from "@/utils/urlNormalization";
 
-import { SelectedTextContext, WebTabContext } from "@/types/message";
+import { hasSelectedTextInstructions, SelectedTextContext, WebTabContext } from "@/types/message";
 import { isAllowedFileForNoteContext } from "@/utils";
 import { getFileIdentityKey } from "@/utils/fileListUtils";
 import { CornerDownLeft, Square, X } from "lucide-react";
@@ -238,9 +238,15 @@ const ChatInput = React.forwardRef<ChatInputHandle, ChatInputProps>(function Cha
     });
   };
 
+  const hasContextInstruction = isAgentMode && hasSelectedTextInstructions(selectedTextContexts);
+
   // A phone may have no Enter key, so a draft turns Stop into a Send that does what Enter does. https://github.com/Brevilabs/obsidian-copilot-private/issues/788
   const showsStop =
-    isGenerating && !(isAgentMode && (inputMessage.trim().length > 0 || selectedImages.length > 0));
+    isGenerating &&
+    !(
+      isAgentMode &&
+      (inputMessage.trim().length > 0 || selectedImages.length > 0 || hasContextInstruction)
+    );
 
   const onSendMessage = () => {
     // A mention is sent as context with the message but never shown as a badge, so it joins the attached context only here.
@@ -650,6 +656,7 @@ const ChatInput = React.forwardRef<ChatInputHandle, ChatInputProps>(function Cha
                 <ChatSendButton
                   inputMessage={inputMessage}
                   imageCount={selectedImages.length}
+                  hasContextInstruction={hasContextInstruction}
                   onSend={() => onSendMessage()}
                 />
               )}

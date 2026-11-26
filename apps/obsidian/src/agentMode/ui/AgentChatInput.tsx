@@ -24,6 +24,7 @@ import { useMentionableAgents } from "@/agents/ui/chatAgents";
 import { logError, logWarn } from "@/logger";
 import { buildWebTabsWithActiveSnapshot } from "@/services/webViewerService/activeWebTabSnapshot";
 import {
+  hasSelectedTextInstructions,
   isNoteSelectedTextContext,
   type MessageContext,
   type SelectedTextContext,
@@ -318,7 +319,12 @@ export const AgentChatInput = memo(function AgentChatInput({
     }: Parameters<ChatInputProps["handleSendMessage"]>[0] = {}) => {
       if (disabled) return;
       const text = inputMessage.trim();
-      if (!text && selectedImages.length === 0) return;
+      if (
+        !text &&
+        selectedImages.length === 0 &&
+        !hasSelectedTextInstructions(selectedTextContexts)
+      )
+        return;
       const rawInput = inputMessage;
 
       const activeFile = app.workspace.getActiveFile();
