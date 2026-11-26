@@ -12,3 +12,6 @@ export const Empty: StoryObj<ComponentProps<typeof ChatSendButton>> = {};
 export const ImageOnly: StoryObj<ComponentProps<typeof ChatSendButton>> = {
   args: { imageCount: 1 },
 };
+export const AnnotatedExcerptOnly: StoryObj<ComponentProps<typeof ChatSendButton>> = {
+  args: { hasContextInstruction: true },
+};

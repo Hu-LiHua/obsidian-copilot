@@ -18,5 +18,15 @@ describe("ChatSendButton", () => {
         expect(onSend).toHaveBeenCalledTimes(disabled ? 0 : 1);
       }
     );
+    it("enables Send for an empty draft when an excerpt carries an instruction (https://github.com/Hu-LiHua/obsidian-copilot/issues/3)", () => {
+      const onSend = jest.fn();
+      render(
+        <ChatSendButton inputMessage="  " imageCount={0} hasContextInstruction onSend={onSend} />
+      );
+      const button = screen.getByRole<HTMLButtonElement>("button", { name: "Send" });
+      expect(button.disabled).toBe(false);
+      fireEvent.click(button);
+      expect(onSend).toHaveBeenCalledTimes(1);
+    });
   });
 });
