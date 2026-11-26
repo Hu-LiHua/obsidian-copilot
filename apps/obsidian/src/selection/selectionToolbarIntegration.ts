@@ -3,8 +3,17 @@ import type { App, Editor, TFile } from "obsidian";
 import type { EditorView } from "@codemirror/view";
 import { v4 as uuidv4 } from "uuid";
 import { logWarn } from "@/logger";
-import { addSelectionToChatContext, type ChatContextHost } from "@/selection/selectionActions";
-import { noteSelectionKey, type KeyedSelection } from "@/selection/selectionStore";
+import {
+  addSelectionToChatContext,
+  tryPinSelection,
+  type ChatContextHost,
+} from "@/selection/selectionActions";
+import {
+  getPinnedSelectionInstruction,
+  noteSelectionKey,
+  type KeyedSelection,
+} from "@/selection/selectionStore";
+import { formatExcerptLocationLabel } from "@/utils/excerptLocation";
 
 const TOOLBAR_PLUGIN_ID = "selection-toolbar";
 const TOOLBAR_READY_EVENT = "selection-toolbar:ready";
@@ -41,8 +50,19 @@ interface ToolbarHostPlugin {
   getApi?: () => SelectionToolbarApi;
 }
 
+export interface AnnotationOverlayRequest {
+  view: EditorView;
+  from: number;
+  to: number;
+  locationLabel: string;
+  initialInstruction?: string;
+  onSubmit: (instruction: string) => boolean;
+}
+
 interface ToolbarHost extends ChatContextHost {
   register(cleanup: () => void): void;
+  canAnnotateSelection?: () => boolean;
+  showSelectionAnnotation?: (request: AnnotationOverlayRequest) => void;
 }
 
 function findToolbarApi(app: App): SelectionToolbarApi | null {
@@ -66,61 +86,128 @@ function resolveSelectionTarget(
   return { editor, file };
 }
 
-function toolbarSelectionReport(ctx: ToolbarSelectionContext): KeyedSelection | null {
+function resolveEditorView(ctx: ToolbarSelectionContext): EditorView | null {
+  if (ctx.view) return ctx.view;
+  const target = resolveSelectionTarget(ctx);
+  return (target?.editor as { cm?: EditorView } | undefined)?.cm ?? null;
+}
+
+function toolbarSelectionReport(
+  ctx: ToolbarSelectionContext
+): { selection: KeyedSelection; from: number; to: number } | null {
   const target = resolveSelectionTarget(ctx);
   if (!target || ctx.from === undefined || ctx.to === undefined) return null;
 
+  const from = Math.min(ctx.from, ctx.to);
+  const to = Math.max(ctx.from, ctx.to);
   const { editor, file } = target;
-  const start = editor.offsetToPos(ctx.from);
-  const end = editor.offsetToPos(ctx.to);
+  const start = editor.offsetToPos(from);
+  const end = editor.offsetToPos(to);
   const content = editor.getRange(start, end);
   if (!content.trim()) return null;
 
   return {
-    location: file.path,
-    key: noteSelectionKey(file.path, start, end),
-    context: {
-      id: uuidv4(),
-      content,
-      sourceType: "note",
-      noteTitle: file.basename,
-      notePath: file.path,
-      startLine: start.line + 1,
-      endLine: end.line + 1,
+    from,
+    to,
+    selection: {
+      location: file.path,
+      key: noteSelectionKey(file.path, start, end),
+      context: {
+        id: uuidv4(),
+        content,
+        sourceType: "note",
+        noteTitle: file.basename,
+        notePath: file.path,
+        startLine: start.line + 1,
+        endLine: end.line + 1,
+      },
     },
   };
 }
 
+function hasUsableEditorSelection(ctx: ToolbarSelectionContext): boolean {
+  return (
+    ctx.surface === "editor" &&
+    ctx.from !== undefined &&
+    ctx.to !== undefined &&
+    Boolean(ctx.text.trim()) &&
+    resolveSelectionTarget(ctx) !== null
+  );
+}
+
 export function registerSelectionToolbarIntegration(plugin: ToolbarHost): void {
-  let unregister: (() => void) | null = null;
+  let unregisters: Array<() => void> = [];
+
+  const clearRegistrations = () => {
+    for (const dispose of unregisters) dispose();
+    unregisters = [];
+  };
 
   const register = (): void => {
     const api = findToolbarApi(plugin.app);
     if (!api) return;
 
     try {
-      unregister?.();
-      unregister = api.registerAction({
-        id: "copilot.add-selection-to-chat-context",
-        label: "Add to Copilot",
-        icon: "quote",
-        group: "copilot",
-        groupOrder: 100,
-        isAvailable: (ctx) =>
-          ctx.surface === "editor" &&
-          ctx.from !== undefined &&
-          ctx.to !== undefined &&
-          Boolean(ctx.text.trim()) &&
-          resolveSelectionTarget(ctx) !== null,
-        run: (ctx) => {
-          const selection = toolbarSelectionReport(ctx);
-          if (!selection) {
-            new Notice("No text selected");
-            return;
-          }
-          void addSelectionToChatContext(plugin, selection);
-        },
-      });
+      clearRegistrations();
+      unregisters.push(
+        api.registerAction({
+          id: "copilot.add-selection-to-chat-context",
+          label: "Add to Copilot",
+          icon: "quote",
+          group: "copilot",
+          groupOrder: 100,
+          order: 1,
+          isAvailable: hasUsableEditorSelection,
+          run: (ctx) => {
+            const report = toolbarSelectionReport(ctx);
+            if (!report) {
+              new Notice("No text selected");
+              return;
+            }
+            void addSelectionToChatContext(plugin, report.selection);
+          },
+        })
+      );
+      unregisters.push(
+        api.registerAction({
+          id: "copilot.annotate-selection",
+          label: "Annotate",
+          icon: "message-square",
+          group: "copilot",
+          groupOrder: 100,
+          order: 2,
+          // Inline annotation belongs to Agent Chat's editor flow only; classic chat and reading view
+          // do not offer it.
+          // https://github.com/Hu-LiHua/obsidian-copilot/issues/3
+          isAvailable: (ctx) =>
+            hasUsableEditorSelection(ctx) &&
+            Boolean(plugin.canAnnotateSelection?.()) &&
+            typeof plugin.showSelectionAnnotation === "function" &&
+            resolveEditorView(ctx) !== null,
+          run: (ctx) => {
+            const report = toolbarSelectionReport(ctx);
+            const view = resolveEditorView(ctx);
+            if (!report || !view || typeof plugin.showSelectionAnnotation !== "function") {
+              new Notice("No text selected");
+              return;
+            }
+            const context = report.selection.context;
+            if (context.sourceType !== "note") return;
+            plugin.showSelectionAnnotation({
+              view,
+              from: report.from,
+              to: report.to,
+              locationLabel: formatExcerptLocationLabel(context.startLine, context.endLine),
+              initialInstruction: getPinnedSelectionInstruction(report.selection.key),
+              onSubmit: (instruction) =>
+                tryPinSelection({
+                  ...report.selection,
+                  context: { ...context, instruction },
+                }),
+            });
+          },
+        })
+      );
     } catch (error) {
       logWarn("Could not register the Selection Toolbar action", error);
     }
@@ -135,7 +222,6 @@ export function registerSelectionToolbarIntegration(plugin: ToolbarHost): void {
   appDocument.addEventListener(TOOLBAR_READY_EVENT, register);
   plugin.register(() => {
     appDocument.removeEventListener(TOOLBAR_READY_EVENT, register);
-    unregister?.();
-    unregister = null;
+    clearRegistrations();
   });
 }

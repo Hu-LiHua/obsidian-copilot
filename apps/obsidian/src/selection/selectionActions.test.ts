@@ -1,6 +1,7 @@
 import {
   addSelectionToChatContext,
   buildEditorSelectionReport,
+  tryPinSelection,
 } from "@/selection/selectionActions";
 import {
   MAX_PINNED_SELECTIONS,
@@ -108,6 +109,59 @@ describe("selectionActions", () => {
       });
 
       expect(getSelectedTextContexts()).toHaveLength(MAX_PINNED_SELECTIONS);
+      expect(Notice).toHaveBeenCalledWith(
+        `You can attach up to ${MAX_PINNED_SELECTIONS} selections. Remove one to add another.`
+      );
+    });
+  });
+
+  describe("tryPinSelection()", () => {
+    it("pins an excerpt with an instruction without activating the chat view, and shows a notice when the limit is reached (https://github.com/Hu-LiHua/obsidian-copilot/issues/3)", () => {
+      const report = buildEditorSelectionReport(editorWith("Annotated excerpt"), research)!;
+      if (report.context.sourceType !== "note") throw new Error("Expected note excerpt");
+      expect(
+        tryPinSelection({
+          ...report,
+          context: { ...report.context, instruction: "Verify this" },
+        })
+      ).toBe(true);
+      expect(getSelectedTextContexts()).toEqual([
+        expect.objectContaining({ content: "Annotated excerpt", instruction: "Verify this" }),
+      ]);
+
+      for (let index = 1; index < MAX_PINNED_SELECTIONS; index++) {
+        expect(
+          tryPinSelection({
+            location: "Research.md",
+            key: `passage:${index}`,
+            context: {
+              id: `note-${index}`,
+              content: `Passage ${index}`,
+              sourceType: "note",
+              noteTitle: "Research",
+              notePath: "Research.md",
+              startLine: 1,
+              endLine: 1,
+            },
+          })
+        ).toBe(true);
+      }
+
+      expect(
+        tryPinSelection({
+          location: "Research.md",
+          key: "passage:overflow",
+          context: {
+            id: "note-overflow",
+            content: "Overflow",
+            sourceType: "note",
+            noteTitle: "Research",
+            notePath: "Research.md",
+            startLine: 1,
+            endLine: 1,
+          },
+        })
+      ).toBe(false);
       expect(Notice).toHaveBeenCalledWith(
         `You can attach up to ${MAX_PINNED_SELECTIONS} selections. Remove one to add another.`
       );
