@@ -1,13 +1,25 @@
+import React from "react";
 import type { Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { MarkdownView } from "obsidian";
 import { quickAskWidgetEffect, quickAskOverlayPlugin } from "./quickAskExtension";
+import { AnnotationPanel } from "@/components/quick-ask/AnnotationPanel";
 import { QuickAskOverlay } from "@/components/quick-ask/QuickAskOverlay";
+import type { QuickAskOverlayOptions } from "@/components/quick-ask/types";
 import { createMapPosReplaceGuard } from "./replaceGuard";
 import { SelectionHighlight } from "./selectionHighlight";
 import type CopilotPlugin from "@/main";
 import { logWarn } from "@/logger";
 import { computeSelectionAnchors } from "@/utils/selectionAnchors";
+
+export interface ShowAnnotationOptions {
+  view: EditorView;
+  from: number;
+  to: number;
+  locationLabel: string;
+  initialInstruction?: string;
+  onSubmit: (instruction: string) => boolean | void;
+}
 
 interface QuickAskWidgetState {
   view: EditorView;
@@ -70,8 +82,6 @@ export class QuickAskController {
     const selectionFrom = selection.from;
     const selectionTo = selection.to;
 
-    this.close(false);
-
     const replaceGuard = createMapPosReplaceGuard({
       editorView: view,
       leafSnapshot: leaf,
@@ -90,6 +100,49 @@ export class QuickAskController {
         };
       },
     });
+
+    this.openOverlay(view, selection, selectionFrom, selectionTo, (onClose) => ({
+      plugin: this.plugin,
+      editor,
+      view,
+      selectedText: selectedTextSnapshot,
+      selectionFrom,
+      selectionTo,
+      replaceGuard,
+      onClose,
+    }));
+  }
+
+  showAnnotation(options: ShowAnnotationOptions): void {
+    const { view, from, to, locationLabel, initialInstruction, onSubmit } = options;
+    const selection = { from, to, head: to, empty: from === to };
+    this.openOverlay(view, selection, from, to, (onClose) => ({
+      plugin: this.plugin,
+      view,
+      onClose,
+      renderPanel: ({ onClose: closeOverlay, onDragOffset }) =>
+        React.createElement(AnnotationPanel, {
+          locationLabel,
+          initialInstruction,
+          onDragOffset,
+          onClose: closeOverlay,
+          onSubmit: (instruction: string) => {
+            if (onSubmit(instruction) !== false) {
+              closeOverlay();
+            }
+          },
+        }),
+    }));
+  }
+
+  private openOverlay(
+    view: EditorView,
+    selection: { from: number; to: number; head: number; empty: boolean },
+    selectionFrom: number,
+    selectionTo: number,
+    buildOptions: (onClose: () => void) => QuickAskOverlayOptions
+  ): void {
+    this.close(false);
 
     const close = (restoreFocus = true) => {
       const isCurrentView = !this.quickAskWidgetState || this.quickAskWidgetState.view === view;
@@ -123,16 +176,7 @@ export class QuickAskController {
             bottomAnchorPos: anchors.bottomPos,
             topAnchorPos: anchors.topPos,
             focusAnchorPos: anchors.focusPos,
-            options: {
-              plugin: this.plugin,
-              editor,
-              view,
-              selectedText: selectedTextSnapshot,
-              selectionFrom,
-              selectionTo,
-              replaceGuard,
-              onClose: () => close(true),
-            },
+            options: buildOptions(() => close(true)),
           }),
           ...SelectionHighlight.buildEffects(view, { from: selectionFrom, to: selectionTo }),
         ],
@@ -140,7 +184,7 @@ export class QuickAskController {
 
       this.quickAskWidgetState = { view, close };
     } catch (error) {
-      logWarn("Failed to show Quick Ask panel:", error);
+      logWarn("Failed to show overlay panel:", error);
       this.quickAskWidgetState = null;
     }
   }

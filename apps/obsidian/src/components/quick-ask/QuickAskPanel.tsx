@@ -1,7 +1,5 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { Notice } from "obsidian";
-import { X } from "lucide-react";
-import { useDraggable } from "@/hooks/use-draggable";
 import type { ResizeDirection } from "@/hooks/use-resizable";
 import { useSettingsValue, updateSetting } from "@/settings/model";
 import { cleanMessageForCopy } from "@/utils";
@@ -10,9 +8,9 @@ import { useQuickAskSession } from "./useQuickAskSession";
 import { QuickAskMessageComponent } from "./QuickAskMessage";
 import { QuickAskInput } from "./QuickAskInput";
 import { QuickAskFooter } from "./QuickAskFooter";
+import { QuickAskPanelShell } from "./QuickAskPanelShell";
 import type { QuickAskPanelProps } from "./types";
 import type { ReplaceInvalidReason } from "@/editor/replaceGuard";
-import { Button } from "@/components/ui/button";
 import { safeAsyncHandler } from "@/utils/safeAsyncHandler";
 
 export function QuickAskPanel({
@@ -27,7 +25,6 @@ export function QuickAskPanel({
 }: QuickAskPanelProps) {
   const [inputText, setInputText] = useState("");
   const chatAreaRef = useRef<HTMLDivElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
   const isChatPinnedToBottomRef = useRef(true);
 
   const currentActiveFile = plugin.app.workspace.getActiveFile();
@@ -55,26 +52,6 @@ export function QuickAskPanel({
     return messages.reduce((lastIdx, m, i) => (m.role === "assistant" ? i : lastIdx), -1);
   }, [messages]);
 
-  const getCurrentPanelPosition = useCallback(() => {
-    const rect = containerRef.current?.getBoundingClientRect();
-    return rect ? { x: rect.left, y: rect.top } : { x: 0, y: 0 };
-  }, []);
-
-  const handleDragPositionChange = useCallback(
-    (pos: { x: number; y: number }) => {
-      onDragOffset?.(pos);
-    },
-    [onDragOffset]
-  );
-
-  const { handlePointerDown: handleDragPointerDown } = useDraggable({
-    dragRef: containerRef,
-    bounds: null,
-    writeToDom: false,
-    getPosition: getCurrentPanelPosition,
-    onPositionChange: handleDragPositionChange,
-  });
-
   const handleResizePointerDown = useCallback(
     (direction: ResizeDirection) =>
       (e: React.PointerEvent): void => {
@@ -96,21 +73,6 @@ export function QuickAskPanel({
     setInputText("");
     await sendMessage(text);
   }, [inputText, isStreaming, sendMessage, hasModel]);
-
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      e.stopPropagation();
-      if (e.key === "Escape" && !e.defaultPrevented) {
-        e.preventDefault();
-        onClose();
-      }
-    },
-    [onClose]
-  );
-
-  const handleStopPropagation = useCallback((e: React.SyntheticEvent) => {
-    e.stopPropagation();
-  }, []);
 
   useEffect(() => {
     const el = chatAreaRef.current;
@@ -219,36 +181,15 @@ export function QuickAskPanel({
   const isDisabledDueToStreaming = hasSelection && isStreaming;
 
   return (
-    <div
-      ref={containerRef}
-      className={`tw-group tw-relative tw-flex tw-size-full tw-flex-col tw-rounded-lg tw-rounded-b-none tw-border tw-border-solid tw-border-border tw-bg-primary tw-shadow-lg${
-        hasMessages && !hasCustomHeight ? " tw-max-h-[min(500px,70vh)]" : ""
-      }`}
-      onKeyDown={handleKeyDown}
-      onKeyUp={handleStopPropagation}
-      onBeforeInput={handleStopPropagation}
-      onInput={handleStopPropagation}
-      onMouseDown={handleStopPropagation}
-      onMouseUp={handleStopPropagation}
-      onClick={handleStopPropagation}
+    <QuickAskPanelShell
+      onClose={onClose}
+      onDragOffset={onDragOffset}
+      className={
+        hasMessages && !hasCustomHeight
+          ? "tw-max-h-[min(500px,70vh)] tw-rounded-b-none"
+          : "tw-rounded-b-none"
+      }
     >
-      <div className="tw-relative tw-flex-none">
-        <div
-          className="tw-flex tw-h-4 tw-cursor-grab tw-touch-none tw-items-center tw-justify-center hover:tw-bg-[color-mix(in_srgb,var(--background-modifier-hover)_20%,transparent)] active:tw-cursor-grabbing"
-          onPointerDown={handleDragPointerDown}
-        >
-          <div className="tw-h-[5px] tw-w-16 tw-rounded-sm tw-bg-[color-mix(in_srgb,var(--text-muted)_40%,transparent)] hover:tw-bg-[color-mix(in_srgb,var(--text-muted)_65%,transparent)]" />
-        </div>
-        <Button
-          className="tw-absolute tw-right-2 tw-top-1 tw-rounded tw-p-1 tw-text-normal"
-          variant="ghost2"
-          onClick={onClose}
-          title="Close"
-        >
-          <X className="tw-size-4" />
-        </Button>
-      </div>
-
       {hasMessages && (
         <div
           ref={chatAreaRef}
@@ -317,6 +258,6 @@ export function QuickAskPanel({
         className="quick-ask-resize-indicator-right tw-absolute tw-bottom-0 tw-right-0 tw-z-[10] tw-size-3 tw-cursor-nwse-resize tw-touch-none [@media(pointer:coarse)]:tw-size-5"
         onPointerDown={handleResizePointerDown("bottom-right")}
       />
-    </div>
+    </QuickAskPanelShell>
   );
 }
