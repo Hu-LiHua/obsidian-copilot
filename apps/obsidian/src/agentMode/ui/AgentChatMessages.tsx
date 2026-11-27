@@ -27,6 +27,7 @@ import { useDayLabels } from "@/hooks/useDayLabels";
 import { useTailPaging } from "@/hooks/useTailPaging";
 import { cn } from "@/lib/utils";
 import { groupResponses, joinResponseText, type ChatMessageRole } from "@/lib/chatResponses";
+import { LivePreviewScopeProvider } from "@/lib/livePreviewScope";
 import { agentResponseText } from "@/agentMode/ui/agentTrail";
 import type { AgentChatBackend } from "@/agentMode/session/AgentChatBackend";
 import type {
@@ -202,16 +203,20 @@ const AgentMessageRow = memo(function AgentMessageRow({
         </AgentReplyMessage>
       ) : (
         <>
-          <ChatSingleMessage
-            sourcePath={sourcePath}
-            message={adaptedMessage}
-            app={app}
-            isStreaming={false}
-            footerStart={completedTurnDuration}
-            responseText={responseText}
-            hideFooter={isAssistant && !endsResponse}
-            onContinue={onContinue}
-          />
+          {/* A reply with no parts of its own still reads as a response, so it carries its own reply view.
+          https://github.com/Hu-LiHua/obsidian-copilot/issues/5 */}
+          <LivePreviewScopeProvider>
+            <ChatSingleMessage
+              sourcePath={sourcePath}
+              message={adaptedMessage}
+              app={app}
+              isStreaming={false}
+              footerStart={completedTurnDuration}
+              responseText={responseText}
+              hideFooter={isAssistant && !endsResponse}
+              onContinue={onContinue}
+            />
+          </LivePreviewScopeProvider>
           {runningTurnDuration ? <div className="tw-px-3">{runningTurnDuration}</div> : null}
         </>
       )}

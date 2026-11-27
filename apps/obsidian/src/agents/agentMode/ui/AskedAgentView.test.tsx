@@ -10,6 +10,10 @@ import { AskedAgentView, ChatAskedAgentView } from "@/agents/agentMode/ui/AskedA
 import { formatAgentReply } from "@/agents/agentReply";
 import { COCO, LEO } from "@/agents/ui/testing/rosterFixtures";
 import { AppContext } from "@/context";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { LivePreviewAdapterProvider } from "@/lib/livePreview";
+import { fakeLivePreviewAdapter } from "@/lib/testing/fakeLivePreviewAdapter";
+import type { AgentTrail } from "@/agentMode/ui/AgentTrailView";
 import { formatMessageClock, formatMessageDateTime } from "@/lib/messageTime";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import type { App } from "obsidian";
@@ -22,25 +26,25 @@ jest.mock("@/components/chat-components/ChatSingleMessage", () => ({
     <div data-testid={`message-${message.sender}`}>{message.message}</div>
   ),
 }));
+jest.mock("@/agentMode/ui/AgentMarkdownText", () => ({
+  AgentMarkdownText: ({ text }: { text: string }) => <div>{text}</div>,
+}));
+
+// The real trail renders here, so the view's reply row shows the Live Preview toggle the way the view shows it.
+// https://github.com/Hu-LiHua/obsidian-copilot/issues/5
 jest.mock("@/agentMode/ui/AgentTrailView", () => ({
-  AgentTrail: ({
-    parts,
-    errorText,
-  }: {
-    parts: { kind: string; text?: string }[];
-    errorText?: string;
-  }) => (
-    <div>
-      {parts.map((part) => part.text ?? "").join("")}
-      {errorText}
-    </div>
-  ),
+  AgentTrail: (props: React.ComponentProps<typeof AgentTrail>) =>
+    jest
+      .requireActual<
+        typeof import("@/agentMode/ui/AgentTrailView")
+      >("@/agentMode/ui/AgentTrailView")
+      .AgentTrail(props),
 }));
 
 const ISSUE = "https://github.com/Brevilabs/obsidian-copilot-private/issues/948";
 const CARDS = "https://github.com/Brevilabs/obsidian-copilot-private/issues/967";
 const STARTED = new Date(2026, 10, 16, 10, 2).getTime();
-const APP = {} as App;
+const APP = { workspace: { getActiveFile: () => null } } as App;
 const SONNET: BackendState = {
   model: {
     current: { baseModelId: "sonnet", effort: null },
@@ -110,16 +114,20 @@ function renderView(
   const onBack = jest.fn();
   render(
     <AppContext.Provider value={APP}>
-      <AskedAgentView
-        run={run(change)}
-        from="Coco"
-        fromFaceSrc={COCO.faceSrc}
-        faceSrc={LEO.faceSrc}
-        chat={chat}
-        replies={replies}
-        app={APP}
-        onBack={onBack}
-      />
+      <TooltipProvider>
+        <LivePreviewAdapterProvider adapter={fakeLivePreviewAdapter()}>
+          <AskedAgentView
+            run={run(change)}
+            from="Coco"
+            fromFaceSrc={COCO.faceSrc}
+            faceSrc={LEO.faceSrc}
+            chat={chat}
+            replies={replies}
+            app={APP}
+            onBack={onBack}
+          />
+        </LivePreviewAdapterProvider>
+      </TooltipProvider>
     </AppContext.Provider>
   );
   return { onBack };
@@ -188,6 +196,28 @@ describe("AskedAgentView", () => {
       expect(screen.getByTestId("message-user").textContent).toBe("Reconcile October.");
       expect(screen.queryByText(/asked you this for the user/)).toBeNull();
       expect(screen.getByText("Matching by date.")).toBeTruthy();
+    });
+
+    it("offers Live Preview on the asked agent's saved reply so its raw Markdown can be read (https://github.com/Hu-LiHua/obsidian-copilot/issues/5)", () => {
+      render(
+        <TooltipProvider>
+          <LivePreviewAdapterProvider adapter={fakeLivePreviewAdapter()}>
+            <ChatAskedAgentView
+              run={run({ status: "finished" })}
+              chat={{ agentSlug: "coco" } as AgentSession}
+              hiddenChats={{ askedChat: () => null } as unknown as HiddenAgentChats}
+              messages={[relay("run-1", "Matched 182 of 214.")]}
+              agents={[COCO, LEO]}
+              app={APP}
+              onBack={() => {}}
+            />
+          </LivePreviewAdapterProvider>
+        </TooltipProvider>
+      );
+
+      fireEvent.click(screen.getByTitle("Live Preview"));
+
+      expect(screen.getByTitle("Reading View")).toBeTruthy();
     });
 
     it(`marks an answer the asking agent passed on as the user's answer (${ISSUE})`, async () => {
@@ -433,20 +463,24 @@ describe("AskedAgentView", () => {
 
     it(`when the run's chat is gone, shows every non-empty reply the asking chat saved for this run, in order, and none of another run's (${CARDS})`, () => {
       render(
-        <ChatAskedAgentView
-          run={run({ status: "finished" })}
-          chat={{ agentSlug: "coco" } as AgentSession}
-          hiddenChats={{ askedChat: () => null } as unknown as HiddenAgentChats}
-          messages={[
-            relay("run-1", "Which month?"),
-            relay("run-2", "Another run's reply."),
-            relay("run-1", ""),
-            relay("run-1", "Matched 182 of 214."),
-          ]}
-          agents={[COCO, LEO]}
-          app={APP}
-          onBack={() => {}}
-        />
+        <TooltipProvider>
+          <LivePreviewAdapterProvider adapter={fakeLivePreviewAdapter()}>
+            <ChatAskedAgentView
+              run={run({ status: "finished" })}
+              chat={{ agentSlug: "coco" } as AgentSession}
+              hiddenChats={{ askedChat: () => null } as unknown as HiddenAgentChats}
+              messages={[
+                relay("run-1", "Which month?"),
+                relay("run-2", "Another run's reply."),
+                relay("run-1", ""),
+                relay("run-1", "Matched 182 of 214."),
+              ]}
+              agents={[COCO, LEO]}
+              app={APP}
+              onBack={() => {}}
+            />
+          </LivePreviewAdapterProvider>
+        </TooltipProvider>
       );
 
       const note = screen.getByText("Leo's steps from this run are no longer available.");
