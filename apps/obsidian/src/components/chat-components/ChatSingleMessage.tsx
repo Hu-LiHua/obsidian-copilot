@@ -3,6 +3,7 @@ import { attachedContext } from "@/components/chat-components/attachedContext";
 import { useAgentMentionRenderer } from "@/agents/ui/agentMentionPills";
 import { Markdown } from "@/components/Markdown";
 import { ChatButtons } from "@/components/chat-components/ChatButtons";
+import { LivePreviewToggle } from "@/components/chat-components/LivePreviewToggle";
 import { AssistantResponseFooter } from "@/components/ui/AssistantResponseFooter";
 import { SourcesModal } from "@/components/modals/SourcesModal";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -34,6 +35,8 @@ import { AgentReasoningBlock } from "@/components/chat-components/AgentReasoning
 import { ClampedContent } from "@/components/ui/clamped-content";
 import { USER_SENDER } from "@/constants";
 import { useMessageDrag } from "@/hooks/useMessageDrag";
+import { useLivePreviewScope } from "@/lib/livePreviewScope";
+import { LivePreviewText } from "@/lib/livePreviewText";
 import { cn } from "@/lib/utils";
 import { parseToolCallMarkers } from "@/LLMProviders/chainRunner/utils/toolCallParser";
 import { parseReasoningBlock } from "@/LLMProviders/chainRunner/utils/AgentReasoningState";
@@ -352,6 +355,12 @@ const ChatSingleMessage: React.FC<ChatSingleMessageProps> = ({
   const collapsibleOpenStateMap = collapsibleOpenStateMapRef.current;
 
   const settings = useSettingsValue();
+  const scope = useLivePreviewScope();
+  // A reply the user typed stays in Reading View, and a reply with no host to mount the editor stays there too.
+  // https://github.com/Hu-LiHua/obsidian-copilot/issues/5
+  const livePreview =
+    message.sender !== USER_SENDER && scope?.livePreview === true && scope.supported;
+  const livePreviewText = parsedReasoningBlock?.contentAfter ?? message.message;
 
   const preprocess = useCallback(
     (content: string): string => {
@@ -742,6 +751,7 @@ const ChatSingleMessage: React.FC<ChatSingleMessageProps> = ({
     app,
     componentRef,
     isStreaming,
+    livePreview,
     preprocess,
     collapsibleOpenStateMap,
     parsedReasoningBlock,
@@ -836,6 +846,16 @@ const ChatSingleMessage: React.FC<ChatSingleMessageProps> = ({
                         onRendered={renderMentionedFolders}
                         className="tw-break-words tw-text-[calc(var(--font-text-size)_-_2px)] tw-font-normal"
                       />
+                    ) : livePreview ? (
+                      <LivePreviewText
+                        text={livePreviewText}
+                        sourcePath={sourcePath}
+                        className={cn(
+                          "tw-break-words tw-text-[calc(var(--font-text-size)_-_2px)] tw-font-normal",
+                          message.isErrorMessage && "tw-text-error"
+                        )}
+                        onError={scope?.reportError}
+                      />
                     ) : (
                       <div
                         ref={contentRef}
@@ -870,6 +890,16 @@ const ChatSingleMessage: React.FC<ChatSingleMessageProps> = ({
         onRendered={renderMentionedFolders}
         className="tw-break-words tw-text-[calc(var(--font-text-size)_-_2px)] tw-font-normal"
       />
+    ) : livePreview ? (
+      <LivePreviewText
+        text={livePreviewText}
+        sourcePath={sourcePath}
+        className={cn(
+          "tw-break-words tw-text-[calc(var(--font-text-size)_-_2px)] tw-font-normal",
+          message.isErrorMessage && "tw-text-error"
+        )}
+        onError={scope?.reportError}
+      />
     ) : (
       <div ref={contentRef} className={message.isErrorMessage ? "tw-text-error" : ""}></div>
     );
@@ -898,17 +928,20 @@ const ChatSingleMessage: React.FC<ChatSingleMessageProps> = ({
         timestampMs={message.timestamp?.epoch}
         shownAtRest={isUserMessage}
         actions={
-          <ChatButtons
-            message={message}
-            text={replyText}
-            onInsertIntoEditor={handleInsertIntoEditor}
-            onRegenerate={onRegenerate}
-            onEdit={onEdit ? handleEdit : undefined}
-            onDelete={onDelete}
-            onShowSources={handleShowSources}
-            onContinue={onContinue}
-            hasSources={message.sources && message.sources.length > 0 ? true : false}
-          />
+          <div className="tw-flex tw-items-center tw-gap-1">
+            {isUserMessage ? null : <LivePreviewToggle />}
+            <ChatButtons
+              message={message}
+              text={replyText}
+              onInsertIntoEditor={handleInsertIntoEditor}
+              onRegenerate={onRegenerate}
+              onEdit={onEdit ? handleEdit : undefined}
+              onDelete={onDelete}
+              onShowSources={handleShowSources}
+              onContinue={onContinue}
+              hasSources={message.sources && message.sources.length > 0 ? true : false}
+            />
+          </div>
         }
       />
     );

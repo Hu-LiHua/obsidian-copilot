@@ -8,6 +8,9 @@ import { ChatMessage } from "@/types/message";
 import type { App } from "obsidian";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { formatMessageClock } from "@/lib/messageTime";
+import { LivePreviewAdapterProvider } from "@/lib/livePreview";
+import { LivePreviewScopeProvider } from "@/lib/livePreviewScope";
+import { fakeLivePreviewAdapter } from "@/lib/testing/fakeLivePreviewAdapter";
 
 const mockCopy = jest.fn();
 jest.mock("@/hooks/useCopyToClipboard", () => ({
@@ -742,6 +745,83 @@ describe("ChatSingleMessage", () => {
         }
       }
     );
+
+    it("shows the reply in Live Preview instead of Reading View once its response is toggled (https://github.com/Hu-LiHua/obsidian-copilot/issues/5)", async () => {
+      const adapter = fakeLivePreviewAdapter();
+      const { container } = render(
+        <TooltipProvider>
+          <LivePreviewAdapterProvider adapter={adapter}>
+            <LivePreviewScopeProvider>
+              <ChatSingleMessage message={baseMessage} app={testApp} isStreaming={false} />
+            </LivePreviewScopeProvider>
+          </LivePreviewAdapterProvider>
+        </TooltipProvider>
+      );
+
+      expect(container.querySelector("[data-live-preview]")).toBeNull();
+
+      fireEvent.click(screen.getByTitle("Live Preview"));
+
+      await waitFor(() => expect(adapter.mounts).toHaveLength(1));
+      expect(adapter.mounts[0].text).toBe("Test message");
+      expect(container.querySelector("[data-live-preview]")).not.toBeNull();
+      expect(screen.getByTitle("Reading View")).not.toBeNull();
+    });
+
+    it("shows the reply in Reading View again when its response is switched back (https://github.com/Hu-LiHua/obsidian-copilot/issues/5)", async () => {
+      const adapter = fakeLivePreviewAdapter();
+      render(
+        <TooltipProvider>
+          <LivePreviewAdapterProvider adapter={adapter}>
+            <LivePreviewScopeProvider>
+              <ChatSingleMessage message={baseMessage} app={testApp} isStreaming={false} />
+            </LivePreviewScopeProvider>
+          </LivePreviewAdapterProvider>
+        </TooltipProvider>
+      );
+
+      fireEvent.click(screen.getByTitle("Live Preview"));
+      await waitFor(() => expect(adapter.mounts).toHaveLength(1));
+
+      fireEvent.click(screen.getByTitle("Reading View"));
+
+      await waitFor(() => expect(renderMarkdownMock).toHaveBeenCalledTimes(2));
+      expect(screen.getByText("Test message")).not.toBeNull();
+    });
+
+    it("keeps the reply in Reading View and offers no toggle where the host has no Live Preview (https://github.com/Hu-LiHua/obsidian-copilot/issues/5)", async () => {
+      const { container } = render(
+        <TooltipProvider>
+          <LivePreviewAdapterProvider adapter={null}>
+            <LivePreviewScopeProvider>
+              <ChatSingleMessage message={baseMessage} app={testApp} isStreaming={false} />
+            </LivePreviewScopeProvider>
+          </LivePreviewAdapterProvider>
+        </TooltipProvider>
+      );
+
+      await waitFor(() => expect(renderMarkdownMock).toHaveBeenCalled());
+      expect(screen.queryByTitle("Live Preview")).toBeNull();
+      expect(container.querySelector("[data-live-preview]")).toBeNull();
+    });
+
+    it("leaves the user's own message in Reading View with no toggle (https://github.com/Hu-LiHua/obsidian-copilot/issues/5)", () => {
+      render(
+        <TooltipProvider>
+          <LivePreviewAdapterProvider adapter={fakeLivePreviewAdapter()}>
+            <LivePreviewScopeProvider>
+              <ChatSingleMessage
+                message={{ ...baseMessage, sender: "user" }}
+                app={testApp}
+                isStreaming={false}
+              />
+            </LivePreviewScopeProvider>
+          </LivePreviewAdapterProvider>
+        </TooltipProvider>
+      );
+
+      expect(screen.queryByTitle("Live Preview")).toBeNull();
+    });
   });
 
   describe("normalizeFootnoteRendering()", () => {

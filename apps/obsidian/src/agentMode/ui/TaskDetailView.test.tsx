@@ -7,6 +7,10 @@ import {
 } from "@/agentMode/ui/TaskDetailView";
 import { makeCommandTask, makeTask, textOutputReader } from "@/agentMode/ui/testing/taskFixtures";
 import { AppContext } from "@/context";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { LivePreviewAdapterProvider } from "@/lib/livePreview";
+import { fakeLivePreviewAdapter } from "@/lib/testing/fakeLivePreviewAdapter";
+import type { AgentTrail } from "@/agentMode/ui/AgentTrailView";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { openTurnDiff } from "@/agentMode/ui/TurnDiffView";
 import React from "react";
@@ -18,16 +22,20 @@ jest.mock("@/components/chat-components/ChatSingleMessage", () => ({
   ),
 }));
 
+jest.mock("@/agentMode/ui/AgentMarkdownText", () => ({
+  AgentMarkdownText: ({ text }: { text: string }) => <div>{text}</div>,
+}));
+
+// The real trail renders inside the wrapper, so the view's reply row shows the Live Preview toggle the way the view shows it.
+// https://github.com/Hu-LiHua/obsidian-copilot/issues/5
 jest.mock("@/agentMode/ui/AgentTrailView", () => ({
-  AgentTrail: ({
-    parts,
-    isStreaming,
-  }: {
-    parts: Array<{ kind: string; title?: string; text?: string }>;
-    isStreaming: boolean;
-  }) => (
-    <div data-testid="trail" data-streaming={String(isStreaming)}>
-      {parts.map((p) => p.title ?? p.text).join(" | ")}
+  AgentTrail: (props: React.ComponentProps<typeof AgentTrail>) => (
+    <div data-testid="trail" data-streaming={String(props.isStreaming)}>
+      {jest
+        .requireActual<
+          typeof import("@/agentMode/ui/AgentTrailView")
+        >("@/agentMode/ui/AgentTrailView")
+        .AgentTrail(props)}
     </div>
   ),
 }));
@@ -59,12 +67,16 @@ function renderDetail(
   files: Record<string, string> = {}
 ) {
   const onBack = jest.fn();
-  const app = {} as never;
+  const app = { workspace: { getActiveFile: () => null } } as never;
   render(
     <AppContext.Provider value={app}>
-      <TaskOutputReaderContext.Provider value={textOutputReader(files)}>
-        <TaskDetailView task={makeTask()} messages={[]} app={app} onBack={onBack} {...props} />
-      </TaskOutputReaderContext.Provider>
+      <TooltipProvider>
+        <LivePreviewAdapterProvider adapter={fakeLivePreviewAdapter()}>
+          <TaskOutputReaderContext.Provider value={textOutputReader(files)}>
+            <TaskDetailView task={makeTask()} messages={[]} app={app} onBack={onBack} {...props} />
+          </TaskOutputReaderContext.Provider>
+        </LivePreviewAdapterProvider>
+      </TooltipProvider>
     </AppContext.Provider>
   );
   return { onBack };
@@ -120,9 +132,8 @@ describe("TaskDetailView", () => {
     expect(screen.getByText("general-purpose · claude-haiku-9")).toBeTruthy();
     expect(screen.getByText("Running").classList.contains("tw-sr-only")).toBe(true);
     expect(screen.getByTestId("message-user").textContent).toBe("Count the words in Welcome.md");
-    expect(screen.getByTestId("trail").textContent).toBe(
-      "Bash: wc -w Welcome.md | Welcome.md has 9 words."
-    );
+    expect(screen.getByTestId("trail").textContent).toContain("Bash: wc -w Welcome.md");
+    expect(screen.getByTestId("trail").textContent).toContain("Welcome.md has 9 words.");
     expect(screen.getByTestId("trail").getAttribute("data-streaming")).toBe("true");
     expect(screen.queryByRole("textbox")).toBeNull();
   });
@@ -159,13 +170,21 @@ describe("TaskDetailView", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /b\.md/ }));
 
-    expect(openTurnDiff).toHaveBeenCalledWith({}, change, "call-1");
+    expect(openTurnDiff).toHaveBeenCalledWith(expect.anything(), change, "call-1");
   });
 
   it("shows no Files changed card for a subagent that changed no files", () => {
     renderDetail({ task: makeTask({ status: "completed" }), messages: SUBAGENT_MESSAGES });
 
     expect(screen.queryByRole("button", { name: /\.md/ })).toBeNull();
+  });
+
+  it("offers Live Preview on a finished subagent's reply so its raw Markdown can be read (https://github.com/Hu-LiHua/obsidian-copilot/issues/5)", () => {
+    renderDetail({ task: makeTask({ status: "completed" }), messages: SUBAGENT_MESSAGES });
+
+    fireEvent.click(screen.getByTitle("Live Preview"));
+
+    expect(screen.getByTitle("Reading View")).toBeTruthy();
   });
 
   it("says a subagent is starting before it has done anything", () => {

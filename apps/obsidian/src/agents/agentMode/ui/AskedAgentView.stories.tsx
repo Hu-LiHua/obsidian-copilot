@@ -5,6 +5,8 @@ import { askedAgentChatFixture } from "@/agents/agentMode/ui/testing/askedAgentC
 import { COCO, LEO, LONG_NAMED_AGENT } from "@/agents/ui/testing/rosterFixtures";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useApp } from "@/context";
+import { LivePreviewAdapterProvider } from "@/lib/livePreview";
+import { livePreviewStub } from "@/lib/livePreviewStub";
 import type { Meta, StoryObj } from "@/lib/story";
 import React from "react";
 
@@ -257,4 +259,16 @@ export const LongNames: StoryObj<ViewProps> = {
     from: "Coco the Quarterly Planning and Release Notes Assistant",
     faceSrc: LONG_NAMED_AGENT.faceSrc,
   },
+};
+
+export const LivePreview: StoryObj<ViewProps> = {
+  render: (args) => (
+    <LivePreviewAdapterProvider adapter={livePreviewStub}>
+      <View
+        run={args.run ?? run({ status: "finished", startedAt: ASKED_AT })}
+        from={args.from ?? "Coco"}
+        chat={args.chat ?? askedAgentChatFixture([ASKED, MATCHING, QUESTION, ANSWER, DONE], "idle")}
+      />
+    </LivePreviewAdapterProvider>
+  ),
 };

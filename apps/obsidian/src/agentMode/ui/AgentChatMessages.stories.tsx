@@ -11,6 +11,8 @@ import type { FeedbackOffer } from "@/agentMode/session/feedback/feedbackOffer";
 import { relayedReply } from "@/agents/agentMode/ui/testing/relayedReply";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useApp } from "@/context";
+import { LivePreviewAdapterProvider } from "@/lib/livePreview";
+import { livePreviewStub } from "@/lib/livePreviewStub";
 import type { Meta, StoryObj } from "@/lib/story";
 import React, { useMemo, useState } from "react";
 
@@ -69,6 +71,25 @@ const tallQuestion: AskUserQuestionPrompt = {
 };
 
 const NO_CHAT_STATES: ChatStates = new Map();
+
+// A chat continued from an earlier one shows its earlier turns as plain messages, with no parts of their own.
+// https://github.com/Hu-LiHua/obsidian-copilot/issues/5
+const CONTINUED_MESSAGES: AgentChatMessage[] = [
+  {
+    id: "continued-question",
+    sender: "user",
+    message: "Which month should I reconcile?",
+    timestamp: { epoch: Date.now(), display: "", fileName: "" },
+    isVisible: true,
+  },
+  {
+    id: "continued-reply",
+    sender: "ai",
+    message: "October matches the export. The odd rows are in [[October books]].",
+    timestamp: { epoch: Date.now(), display: "", fileName: "" },
+    isVisible: true,
+  },
+];
 
 function chatStatesWithOffer(offer: FeedbackOffer): ChatStates {
   return new Map([["feedback-offer", offer]]);
@@ -625,4 +646,18 @@ export const GrewAfterAnotherAgent: StoryObj<AgentChatMessagesProps> = {
     isLoading: false,
   },
   render: (props) => <QueuedActionsDemo {...actionRailArgs} {...props} />,
+};
+
+export const ContinuedReplyLivePreview: StoryObj<AgentChatMessagesProps> = {
+  render: () => (
+    <LivePreviewAdapterProvider adapter={livePreviewStub}>
+      <QueuedActionsDemo
+        {...actionRailArgs}
+        messages={CONTINUED_MESSAGES}
+        pendingToolPermissions={[]}
+        pendingAskUserQuestions={[]}
+        isLoading={false}
+      />
+    </LivePreviewAdapterProvider>
+  ),
 };

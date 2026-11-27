@@ -4,6 +4,8 @@ import { COMMAND_OUTPUT_MAX_BYTES, TaskDetailView } from "@/agentMode/ui/TaskDet
 import { makeCommandTask, makeTask, textOutputReader } from "@/agentMode/ui/testing/taskFixtures";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useApp } from "@/context";
+import { LivePreviewAdapterProvider } from "@/lib/livePreview";
+import { livePreviewStub } from "@/lib/livePreviewStub";
 import type { Meta, StoryObj } from "@/lib/story";
 import React from "react";
 
@@ -241,4 +243,13 @@ export const CommandTruncated: StoryObj<Props> = {
     }),
     messages: [],
   },
+};
+
+export const SubagentLivePreview: StoryObj<Props> = {
+  render: (args) => (
+    <LivePreviewAdapterProvider adapter={livePreviewStub}>
+      <Demo {...args} />
+    </LivePreviewAdapterProvider>
+  ),
+  args: { task: { ...SUBAGENT, status: "completed" } },
 };
