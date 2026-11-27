@@ -27,7 +27,7 @@ import { useDayLabels } from "@/hooks/useDayLabels";
 import { useTailPaging } from "@/hooks/useTailPaging";
 import { cn } from "@/lib/utils";
 import { groupResponses, joinResponseText, type ChatMessageRole } from "@/lib/chatResponses";
-import { LivePreviewScopeProvider } from "@/lib/livePreviewScope";
+import { LivePreviewScopeProvider, useLivePreviewScope } from "@/lib/livePreviewScope";
 import { agentResponseText } from "@/agentMode/ui/agentTrail";
 import type { AgentChatBackend } from "@/agentMode/session/AgentChatBackend";
 import type {
@@ -41,9 +41,10 @@ import type {
 import type { ChatMessage } from "@/types/message";
 import { logError } from "@/logger";
 import { App } from "obsidian";
-import React, { memo, useCallback, useMemo, useRef } from "react";
+import React, { memo, useCallback, useMemo, useRef, useState } from "react";
 
 const EMPTY_PARTS = Object.freeze([]) as unknown as AgentMessagePart[];
+const EMPTY_LIVE_PREVIEW_RESPONSES: ReadonlySet<string> = Object.freeze(new Set<string>());
 
 interface AgentChatMessagesProps {
   messages: AgentChatMessage[];
@@ -129,6 +130,7 @@ const AgentMessageRow = memo(function AgentMessageRow({
 }: AgentMessageRowProps) {
   const adaptedMessage = toChatMessageView(message);
   const isAssistant = message.sender !== USER_SENDER;
+  const scope = useLivePreviewScope();
   const hasParts = (message.parts?.length ?? 0) > 0;
   // A reply the agent cancelled before any text or tool activity still owes the user its stop notice. https://github.com/logancyang/obsidian-copilot/issues/4062
   const renderTrail = isAssistant && (hasParts || message.agentCancelCause !== undefined);
@@ -155,10 +157,14 @@ const AgentMessageRow = memo(function AgentMessageRow({
     // https://github.com/logancyang/obsidian-copilot/issues/3343
     // A user message's floating bar reaches past its row, which paint containment would cut off.
     // https://github.com/Brevilabs/obsidian-copilot-private/issues/971
+    // A row in Live Preview holds a live editor, which paint containment would leave without a height.
+    // https://github.com/Hu-LiHua/obsidian-copilot/issues/6
     <div
       className={cn(
         "tw-w-full",
-        isAssistant && "[contain-intrinsic-size:auto_500px] [content-visibility:auto]"
+        isAssistant &&
+          !scope?.livePreview &&
+          "[contain-intrinsic-size:auto_500px] [content-visibility:auto]"
       )}
     >
       {/* A reply opened from its note, or saved before the save_memory tool, has no call to put the save in place of. https://github.com/Brevilabs/obsidian-copilot-private/issues/988 */}
@@ -203,20 +209,16 @@ const AgentMessageRow = memo(function AgentMessageRow({
         </AgentReplyMessage>
       ) : (
         <>
-          {/* A reply with no parts of its own still reads as a response, so it carries its own reply view.
-          https://github.com/Hu-LiHua/obsidian-copilot/issues/5 */}
-          <LivePreviewScopeProvider>
-            <ChatSingleMessage
-              sourcePath={sourcePath}
-              message={adaptedMessage}
-              app={app}
-              isStreaming={false}
-              footerStart={completedTurnDuration}
-              responseText={responseText}
-              hideFooter={isAssistant && !endsResponse}
-              onContinue={onContinue}
-            />
-          </LivePreviewScopeProvider>
+          <ChatSingleMessage
+            sourcePath={sourcePath}
+            message={adaptedMessage}
+            app={app}
+            isStreaming={false}
+            footerStart={completedTurnDuration}
+            responseText={responseText}
+            hideFooter={isAssistant && !endsResponse}
+            onContinue={onContinue}
+          />
           {runningTurnDuration ? <div className="tw-px-3">{runningTurnDuration}</div> : null}
         </>
       )}
@@ -344,6 +346,26 @@ const AgentChatMessages = memo(
       [visible, relays]
     );
     const newestResponse = responses.findLastIndex((response) => response.replies.length > 0);
+    // Every response keeps its own Live Preview choice, so one response's toggle does not carry to the next, and a preview that fails puts only that response back in Reading View.
+    // https://github.com/Hu-LiHua/obsidian-copilot/issues/6
+    const [livePreviewResponses, setLivePreviewResponses] = useState<ReadonlySet<string>>(
+      EMPTY_LIVE_PREVIEW_RESPONSES
+    );
+    const toggleResponseLivePreview = useCallback((responseKey: string) => {
+      setLivePreviewResponses((current) => {
+        const next = new Set(current);
+        if (!next.delete(responseKey)) next.add(responseKey);
+        return next;
+      });
+    }, []);
+    const failResponseLivePreview = useCallback((responseKey: string) => {
+      setLivePreviewResponses((current) => {
+        if (!current.has(responseKey)) return current;
+        const next = new Set(current);
+        next.delete(responseKey);
+        return next;
+      });
+    }, []);
 
     return (
       <div className="tw-flex tw-h-full tw-flex-1 tw-flex-col tw-overflow-hidden">
@@ -367,40 +389,45 @@ const AgentChatMessages = memo(
             if (shown.length === 0) return null;
             const end = replies.at(-1);
             const endReplies = replies.map((index) => visible[index]);
+            const responseKey = getMessageKey(adapted[messages[0]], messages[0]);
             return (
-              <div
-                key={getMessageKey(adapted[messages[0]], messages[0])}
-                className="tw-group/response"
+              <LivePreviewScopeProvider
+                key={responseKey}
+                livePreview={livePreviewResponses.has(responseKey)}
+                onToggle={() => toggleResponseLivePreview(responseKey)}
+                onError={() => failResponseLivePreview(responseKey)}
               >
-                {shown.map((index) => {
-                  const message = visible[index];
-                  const dayLabel = dayLabels.get(index);
-                  const isStreaming = message.id === streamingMessageId;
-                  return (
-                    <React.Fragment key={getMessageKey(adapted[index], index)}>
-                      {dayLabel ? <ChatDayLabel label={dayLabel} /> : null}
-                      <AgentMessageRow
-                        message={message}
-                        app={app}
-                        sourcePath={sourcePath}
-                        responseText={
-                          index === end ? joinResponseText(endReplies.map(replyText)) : undefined
-                        }
-                        responseDurationMs={
-                          index === end && responseIndex === newestResponse && !isStreaming
-                            ? addedDurations(endReplies)
-                            : undefined
-                        }
-                        isStreaming={isStreaming}
-                        trailingCard={chatCards.get(index)}
-                        onContinueFrom={continueFrom}
-                        agentReply={relays.get(message.id)?.relay}
-                        relayRun={relays.get(message.id)?.run}
-                      />
-                    </React.Fragment>
-                  );
-                })}
-              </div>
+                <div className="tw-group/response">
+                  {shown.map((index) => {
+                    const message = visible[index];
+                    const dayLabel = dayLabels.get(index);
+                    const isStreaming = message.id === streamingMessageId;
+                    return (
+                      <React.Fragment key={getMessageKey(adapted[index], index)}>
+                        {dayLabel ? <ChatDayLabel label={dayLabel} /> : null}
+                        <AgentMessageRow
+                          message={message}
+                          app={app}
+                          sourcePath={sourcePath}
+                          responseText={
+                            index === end ? joinResponseText(endReplies.map(replyText)) : undefined
+                          }
+                          responseDurationMs={
+                            index === end && responseIndex === newestResponse && !isStreaming
+                              ? addedDurations(endReplies)
+                              : undefined
+                          }
+                          isStreaming={isStreaming}
+                          trailingCard={chatCards.get(index)}
+                          onContinueFrom={continueFrom}
+                          agentReply={relays.get(message.id)?.relay}
+                          relayRun={relays.get(message.id)?.run}
+                        />
+                      </React.Fragment>
+                    );
+                  })}
+                </div>
+              </LivePreviewScopeProvider>
             );
           })}
           {inlinePlanCard}

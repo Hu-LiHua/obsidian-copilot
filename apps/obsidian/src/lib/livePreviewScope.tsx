@@ -35,23 +35,30 @@ export function LivePreviewScopeProvider({
   const adapter = useLivePreviewAdapter();
   const supported = adapter !== null;
   const livePreview = livePreviewProp ?? ownLivePreview;
+  const onToggleRef = React.useRef(onToggleProp);
+  const onErrorRef = React.useRef(onError);
+  React.useEffect(() => {
+    onToggleRef.current = onToggleProp;
+    onErrorRef.current = onError;
+  }, [onToggleProp, onError]);
+  // The owner's callbacks change identity on every render, so the scope keeps the last ones and hands out the same functions, which keeps a mounted preview from being torn down and mounted again on every update.
+  // https://github.com/Hu-LiHua/obsidian-copilot/issues/6
   const toggle = React.useCallback(() => {
-    if (onToggleProp) {
-      onToggleProp();
+    const owner = onToggleRef.current;
+    if (owner) {
+      owner();
       return;
     }
     setOwnLivePreview((value) => !value);
-  }, [onToggleProp]);
-  const reportError = React.useCallback(
-    (error: unknown) => {
-      if (onError) {
-        onError(error);
-        return;
-      }
-      setOwnLivePreview(false);
-    },
-    [onError]
-  );
+  }, []);
+  const reportError = React.useCallback((error: unknown) => {
+    const owner = onErrorRef.current;
+    if (owner) {
+      owner(error);
+      return;
+    }
+    setOwnLivePreview(false);
+  }, []);
   const scope = React.useMemo<LivePreviewScope>(
     () => ({
       livePreview: livePreview && supported,

@@ -29,7 +29,7 @@ import { AgentTurnDurationIndicator } from "@/agentMode/ui/AgentTurnDurationIndi
 import type { MemorySaveTrail } from "@/agents/agentMode/memorySaveCards";
 import { useAgentTasks, type AgentTasksContextValue } from "@/agentMode/ui/AgentTasksContext";
 import { AssistantResponseFooter } from "@/components/ui/AssistantResponseFooter";
-import { LivePreviewScopeProvider } from "@/lib/livePreviewScope";
+import { LivePreviewScopeProvider, useLivePreviewScope } from "@/lib/livePreviewScope";
 import { logWarn } from "@/logger";
 import { getVaultBase } from "@/utils/vaultPath";
 import { App } from "obsidian";
@@ -105,18 +105,32 @@ export const AgentTrail: React.FC<AgentTrailProps> = ({
   // The preview is a look at one response, so it lasts as long as that response does and starts again in Reading View. A preview that cannot be shown puts the reply back in Reading View instead of leaving it blank.
   // https://github.com/Hu-LiHua/obsidian-copilot/issues/4
   const [ownLivePreview, setOwnLivePreview] = React.useState(false);
-  const livePreview = livePreviewProp ?? ownLivePreview;
+  // The owner of the response holds the choice, so every row of that response reads the same view; a trail shown on its own keeps its own.
+  // https://github.com/Hu-LiHua/obsidian-copilot/issues/6
+  const outer = useLivePreviewScope();
+  const livePreview = outer?.livePreview ?? livePreviewProp ?? ownLivePreview;
   const onToggleLivePreview = React.useCallback(() => {
+    if (outer) {
+      outer.toggle();
+      return;
+    }
     if (onToggleLivePreviewProp) {
       onToggleLivePreviewProp();
       return;
     }
     setOwnLivePreview((shown) => !shown);
-  }, [onToggleLivePreviewProp]);
-  const onPreviewError = React.useCallback((error: unknown) => {
-    logWarn("[LivePreview] the reply could not be shown as Live Preview", error);
-    setOwnLivePreview(false);
-  }, []);
+  }, [outer, onToggleLivePreviewProp]);
+  const onPreviewError = React.useCallback(
+    (error: unknown) => {
+      if (outer) {
+        outer.reportError(error);
+        return;
+      }
+      logWarn("[LivePreview] the reply could not be shown as Live Preview", error);
+      setOwnLivePreview(false);
+    },
+    [outer]
+  );
   // A failed turn's error is stored as message text, which a reply with parts never shows.
   // https://github.com/Brevilabs/obsidian-copilot-private/issues/633
   const notice =
