@@ -1,6 +1,6 @@
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import { Component, Platform, type App } from "obsidian";
+import { Component, Notice, Platform, type App } from "obsidian";
 import type {
   LivePreviewAdapter,
   LivePreviewHandle,
@@ -202,6 +202,9 @@ export function createLivePreviewAdapter(app: App): LivePreviewAdapter | null {
         return mountLivePreview(app, options);
       } catch (error) {
         logWarn("[LivePreview] the reply could not be shown as Live Preview", error);
+        // The user asked for Live Preview and did not get it, so they are told why the reply still reads as usual.
+        // https://github.com/Hu-LiHua/obsidian-copilot/issues/6
+        new Notice("Live Preview could not be shown for this response. It stays in Reading View.");
         options.onError?.(error);
         return null;
       }

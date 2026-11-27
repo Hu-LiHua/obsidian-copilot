@@ -16,6 +16,11 @@ import { EMPTY_CHAT_STATES, withChatState } from "@/agentMode/session/chatExtens
 import { CONNECTOR_CARDS } from "@/connectors/agentMode/connectorCards";
 import { AI_SENDER, USER_SENDER } from "@/constants";
 import { AppContext } from "@/context";
+import { LivePreviewAdapterProvider, type LivePreviewAdapter } from "@/lib/livePreview";
+import { LivePreviewText as MockLivePreviewText } from "@/lib/livePreviewText";
+import { fakeLivePreviewAdapter } from "@/lib/testing/fakeLivePreviewAdapter";
+import { LivePreviewToggle as MockLivePreviewToggle } from "@/components/chat-components/LivePreviewToggle";
+import { TooltipProvider as MockTooltipProvider } from "@/components/ui/tooltip";
 import type { App } from "obsidian";
 import { openTurnDiff } from "@/agentMode/ui/TurnDiffView";
 import { logError } from "@/logger";
@@ -79,64 +84,74 @@ jest.mock("@/components/chat-components/ChatSingleMessage", () => ({
   },
 }));
 
-jest.mock("@/agentMode/ui/AgentTrailView", () => ({
-  AgentTrail: ({
-    timestampMs,
-    turnDurationMs,
-    responseText,
-    hideFooter,
-    parts,
-    errorText,
-    agentCancelCause,
-    fileChanges,
-    memorySaves,
-    onOpenFileChange,
-    onContinue,
-  }: {
-    timestampMs?: number;
-    turnDurationMs?: number;
-    responseText?: string;
-    hideFooter?: boolean;
-    parts: unknown[];
-    errorText?: string;
-    agentCancelCause?: string;
-    fileChanges?: TurnFileChange[];
-    memorySaves?: { byCall: ReadonlyMap<string, unknown> } | null;
-    onOpenFileChange?: (change: TurnFileChange) => void;
-    onContinue?: () => void;
-  }) => {
-    mockTrailRender(parts);
-    return (
-      <div
-        data-testid="agent-trail-timestamp"
-        data-response-text={responseText}
-        data-row={hideFooter ? "none" : "shown"}
-        data-duration={turnDurationMs}
-      >
-        {timestampMs}
-        {memorySaves ? (
-          <span data-testid="agent-trail-memory-anchor">
-            {Array.from(memorySaves.byCall.keys()).join(",")}
-          </span>
-        ) : null}
-        {onContinue ? (
-          <button type="button" onClick={onContinue}>
-            Continue trail
-          </button>
-        ) : null}
-        {errorText ? <span data-testid="agent-trail-error">{errorText}</span> : null}
-        {agentCancelCause ? (
-          <span data-testid="agent-trail-cancel-cause">{agentCancelCause}</span>
-        ) : null}
-        {fileChanges?.map((change) => (
-          <button key={change.path} type="button" onClick={() => onOpenFileChange?.(change)}>
-            {change.path}
-          </button>
-        ))}
-      </div>
-    );
-  },
-}));
+jest.mock("@/agentMode/ui/AgentTrailView", () => {
+  const { useLivePreviewScope: useScope } = jest.requireActual("@/lib/livePreviewScope");
+  return {
+    AgentTrail: ({
+      timestampMs,
+      turnDurationMs,
+      responseText,
+      hideFooter,
+      parts,
+      errorText,
+      agentCancelCause,
+      fileChanges,
+      memorySaves,
+      onOpenFileChange,
+      onContinue,
+    }: {
+      timestampMs?: number;
+      turnDurationMs?: number;
+      responseText?: string;
+      hideFooter?: boolean;
+      parts: unknown[];
+      errorText?: string;
+      agentCancelCause?: string;
+      fileChanges?: TurnFileChange[];
+      memorySaves?: { byCall: ReadonlyMap<string, unknown> } | null;
+      onOpenFileChange?: (change: TurnFileChange) => void;
+      onContinue?: () => void;
+    }) => {
+      mockTrailRender(parts);
+      const scope = useScope();
+      return (
+        <div
+          data-testid="agent-trail-timestamp"
+          data-response-text={responseText}
+          data-row={hideFooter ? "none" : "shown"}
+          data-duration={turnDurationMs}
+        >
+          {timestampMs}
+          {memorySaves ? (
+            <span data-testid="agent-trail-memory-anchor">
+              {Array.from(memorySaves.byCall.keys()).join(",")}
+            </span>
+          ) : null}
+          {onContinue ? (
+            <button type="button" onClick={onContinue}>
+              Continue trail
+            </button>
+          ) : null}
+          {errorText ? <span data-testid="agent-trail-error">{errorText}</span> : null}
+          {agentCancelCause ? (
+            <span data-testid="agent-trail-cancel-cause">{agentCancelCause}</span>
+          ) : null}
+          {fileChanges?.map((change) => (
+            <button key={change.path} type="button" onClick={() => onOpenFileChange?.(change)}>
+              {change.path}
+            </button>
+          ))}
+          <MockTooltipProvider>
+            <MockLivePreviewToggle />
+          </MockTooltipProvider>
+          {scope?.livePreview ? (
+            <MockLivePreviewText text="The note has three points." sourcePath="note.md" />
+          ) : null}
+        </div>
+      );
+    },
+  };
+});
 
 jest.mock("@/entitlement");
 
@@ -729,6 +744,54 @@ describe("AgentChatMessages", () => {
       const reply = screen.getByTestId("agent-trail-timestamp").closest(".tw-w-full");
       expect(reply?.className).toContain("[content-visibility:auto]");
       expect(reply?.className).toContain("[contain-intrinsic-size:auto_500px]");
+    });
+
+    it("paints a response in Live Preview in full, so its editor gets a height https://github.com/Hu-LiHua/obsidian-copilot/issues/6", () => {
+      const adapter = fakeLivePreviewAdapter();
+      const props = messagesProps(
+        [
+          assistantMessage("user-1", 1_000, { sender: "user", message: "Summarize this note" }),
+          assistantMessage("answer-1", 2_000, {
+            parts: [{ kind: "text", text: "The note has three points." }],
+          }),
+        ],
+        false
+      );
+
+      render(
+        <LivePreviewAdapterProvider adapter={adapter}>
+          <AgentChatMessages {...props} />
+        </LivePreviewAdapterProvider>
+      );
+
+      fireEvent.click(screen.getByTitle("Live Preview"));
+
+      const reply = screen.getByTestId("agent-trail-timestamp").closest(".tw-w-full");
+      expect(reply?.className).not.toContain("content-visibility");
+    });
+
+    it("puts a response back in Reading View when its Live Preview cannot be shown https://github.com/Hu-LiHua/obsidian-copilot/issues/6", () => {
+      const adapter: LivePreviewAdapter = { mount: () => null };
+      const props = messagesProps(
+        [
+          assistantMessage("user-1", 1_000, { sender: "user", message: "Summarize this note" }),
+          assistantMessage("answer-1", 2_000, {
+            parts: [{ kind: "text", text: "The note has three points." }],
+          }),
+        ],
+        false
+      );
+
+      render(
+        <LivePreviewAdapterProvider adapter={adapter}>
+          <AgentChatMessages {...props} />
+        </LivePreviewAdapterProvider>
+      );
+
+      fireEvent.click(screen.getByTitle("Live Preview"));
+
+      const reply = screen.getByTestId("agent-trail-timestamp").closest(".tw-w-full");
+      expect(reply?.className).toContain("[content-visibility:auto]");
     });
 
     it("https://github.com/Brevilabs/obsidian-copilot-private/issues/971 paints a user message's row in full, so its floating bar is not cut off at the row's edge", () => {
