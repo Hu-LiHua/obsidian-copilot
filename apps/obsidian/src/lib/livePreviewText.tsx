@@ -1,5 +1,6 @@
 import { useLivePreviewAdapter, type LivePreviewHandle } from "@/lib/livePreview";
 import { useLivePreviewScope } from "@/lib/livePreviewScope";
+import { logWarn } from "@/logger";
 import React from "react";
 
 interface LivePreviewTextProps {
@@ -30,15 +31,13 @@ export function LivePreviewText({
     try {
       handle = adapter.mount({ container, text, sourcePath, onError: report });
     } catch (error) {
+      // The host reports a failure it caught itself, so an error that reaches here is one it never saw.
+      // https://github.com/Hu-LiHua/obsidian-copilot/issues/6
+      logWarn("[LivePreview] the reply could not be shown as Live Preview", error);
       report?.(error);
       return;
     }
-    // A mount that brings back nothing would leave the reply blank, so the owner puts it back in Reading View.
-    // https://github.com/Hu-LiHua/obsidian-copilot/issues/6
-    if (!handle) {
-      report?.(new Error("The Live Preview editor could not be mounted."));
-      return;
-    }
+    if (!handle) return;
     handleRef.current = handle;
     return () => {
       handleRef.current = null;

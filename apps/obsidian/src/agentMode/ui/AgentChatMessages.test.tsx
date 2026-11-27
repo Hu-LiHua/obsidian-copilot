@@ -17,10 +17,7 @@ import { CONNECTOR_CARDS } from "@/connectors/agentMode/connectorCards";
 import { AI_SENDER, USER_SENDER } from "@/constants";
 import { AppContext } from "@/context";
 import { LivePreviewAdapterProvider, type LivePreviewAdapter } from "@/lib/livePreview";
-import { LivePreviewText as MockLivePreviewText } from "@/lib/livePreviewText";
 import { fakeLivePreviewAdapter } from "@/lib/testing/fakeLivePreviewAdapter";
-import { LivePreviewToggle as MockLivePreviewToggle } from "@/components/chat-components/LivePreviewToggle";
-import { TooltipProvider as MockTooltipProvider } from "@/components/ui/tooltip";
 import type { App } from "obsidian";
 import { openTurnDiff } from "@/agentMode/ui/TurnDiffView";
 import { logError } from "@/logger";
@@ -86,6 +83,11 @@ jest.mock("@/components/chat-components/ChatSingleMessage", () => ({
 
 jest.mock("@/agentMode/ui/AgentTrailView", () => {
   const { useLivePreviewScope: useScope } = jest.requireActual("@/lib/livePreviewScope");
+  const { LivePreviewText } = jest.requireActual("@/lib/livePreviewText");
+  const { LivePreviewToggle } = jest.requireActual(
+    "@/components/chat-components/LivePreviewToggle"
+  );
+  const { TooltipProvider } = jest.requireActual("@/components/ui/tooltip");
   return {
     AgentTrail: ({
       timestampMs,
@@ -141,11 +143,11 @@ jest.mock("@/agentMode/ui/AgentTrailView", () => {
               {change.path}
             </button>
           ))}
-          <MockTooltipProvider>
-            <MockLivePreviewToggle />
-          </MockTooltipProvider>
+          <TooltipProvider>
+            <LivePreviewToggle />
+          </TooltipProvider>
           {scope?.livePreview ? (
-            <MockLivePreviewText text="The note has three points." sourcePath="note.md" />
+            <LivePreviewText text="The note has three points." sourcePath="note.md" />
           ) : null}
         </div>
       );
@@ -771,7 +773,14 @@ describe("AgentChatMessages", () => {
     });
 
     it("puts a response back in Reading View when its Live Preview cannot be shown https://github.com/Hu-LiHua/obsidian-copilot/issues/6", () => {
-      const adapter: LivePreviewAdapter = { mount: () => null };
+      // The host reports the failure it caught itself and hands back no editor, so the client never sees the error.
+      // https://github.com/Hu-LiHua/obsidian-copilot/issues/6
+      const adapter: LivePreviewAdapter = {
+        mount: (options) => {
+          options.onError?.(new Error("Obsidian's editor is not available"));
+          return null;
+        },
+      };
       const props = messagesProps(
         [
           assistantMessage("user-1", 1_000, { sender: "user", message: "Summarize this note" }),

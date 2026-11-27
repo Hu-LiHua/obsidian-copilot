@@ -107,7 +107,7 @@ describe("livePreviewText", () => {
       expect(adapter.collapsed).toBe(1);
     });
 
-    it("leaves the preview open when another key is pressed inside it", () => {
+    it("leaves the preview open when another key is pressed inside it https://github.com/Hu-LiHua/obsidian-copilot/issues/6", () => {
       const adapter = fakeLivePreviewAdapter();
       const { container } = render(
         <LivePreviewAdapterProvider adapter={adapter}>
@@ -139,7 +139,7 @@ describe("livePreviewText", () => {
       expect(onError).toHaveBeenCalledWith(failure);
     });
 
-    it("reports a mount that brings back nothing, so the reply is not left blank https://github.com/Hu-LiHua/obsidian-copilot/issues/6", () => {
+    it("leaves a mount that brings back nothing to the host that already reported it https://github.com/Hu-LiHua/obsidian-copilot/issues/6", () => {
       const adapter: LivePreviewAdapter = { mount: () => null };
       const onError = jest.fn();
 
@@ -149,7 +149,7 @@ describe("livePreviewText", () => {
         </LivePreviewAdapterProvider>
       );
 
-      expect(onError).toHaveBeenCalledTimes(1);
+      expect(onError).not.toHaveBeenCalled();
     });
 
     it("keeps the preview mounted when the owner of the choice re-renders https://github.com/Hu-LiHua/obsidian-copilot/issues/6", () => {

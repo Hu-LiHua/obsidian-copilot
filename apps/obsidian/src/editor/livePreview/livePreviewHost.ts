@@ -187,7 +187,14 @@ function mountLivePreview(app: App, options: LivePreviewMountOptions): LivePrevi
     collapse(): void {
       const cm = editor?.cm;
       if (!cm) return;
-      cm.contentDOM.blur();
+      // An opened widget holds the focus in a child of the editor, so that child is the one that has to let go of it.
+      // https://github.com/Hu-LiHua/obsidian-copilot/issues/6
+      const focused = cm.dom.ownerDocument.activeElement;
+      if (focused && cm.dom.contains(focused)) {
+        (focused as HTMLElement).blur();
+      } else {
+        cm.contentDOM.blur();
+      }
       cm.dom.classList.remove("cm-focused");
     },
   };
@@ -197,15 +204,23 @@ function mountLivePreview(app: App, options: LivePreviewMountOptions): LivePrevi
 // https://github.com/Hu-LiHua/obsidian-copilot/issues/4
 export function createLivePreviewAdapter(app: App): LivePreviewAdapter | null {
   if (!isDesktopRuntime()) return null;
+  let told = false;
   return {
     mount(options: LivePreviewMountOptions): LivePreviewHandle | null {
       try {
-        return mountLivePreview(app, options);
+        const handle = mountLivePreview(app, options);
+        told = false;
+        return handle;
       } catch (error) {
         logWarn("[LivePreview] the reply could not be shown as Live Preview", error);
-        // The user asked for Live Preview and did not get it, so they are told why the reply still reads as usual.
+        // The user asked for Live Preview and did not get it, so they are told why the reply still reads as usual. One response mounts several text segments, so the notice waits for the next preview that works.
         // https://github.com/Hu-LiHua/obsidian-copilot/issues/6
-        new Notice("Live Preview could not be shown for this response. It stays in Reading View.");
+        if (!told) {
+          told = true;
+          new Notice(
+            "Live Preview could not be shown for this response. It stays in Reading View."
+          );
+        }
         options.onError?.(error);
         return null;
       }
