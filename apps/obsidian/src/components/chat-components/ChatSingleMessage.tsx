@@ -361,6 +361,15 @@ const ChatSingleMessage: React.FC<ChatSingleMessageProps> = ({
   const livePreview =
     message.sender !== USER_SENDER && scope?.livePreview === true && scope.supported;
   const livePreviewText = parsedReasoningBlock?.contentAfter ?? message.message;
+  const livePreviewProps = {
+    text: livePreviewText,
+    sourcePath,
+    className: cn(
+      "tw-break-words tw-text-[calc(var(--font-text-size)_-_2px)] tw-font-normal",
+      message.isErrorMessage && "tw-text-error"
+    ),
+    onError: scope?.reportError,
+  };
 
   const preprocess = useCallback(
     (content: string): string => {
@@ -847,15 +856,7 @@ const ChatSingleMessage: React.FC<ChatSingleMessageProps> = ({
                         className="tw-break-words tw-text-[calc(var(--font-text-size)_-_2px)] tw-font-normal"
                       />
                     ) : livePreview ? (
-                      <LivePreviewText
-                        text={livePreviewText}
-                        sourcePath={sourcePath}
-                        className={cn(
-                          "tw-break-words tw-text-[calc(var(--font-text-size)_-_2px)] tw-font-normal",
-                          message.isErrorMessage && "tw-text-error"
-                        )}
-                        onError={scope?.reportError}
-                      />
+                      <LivePreviewText {...livePreviewProps} />
                     ) : (
                       <div
                         ref={contentRef}
@@ -891,15 +892,7 @@ const ChatSingleMessage: React.FC<ChatSingleMessageProps> = ({
         className="tw-break-words tw-text-[calc(var(--font-text-size)_-_2px)] tw-font-normal"
       />
     ) : livePreview ? (
-      <LivePreviewText
-        text={livePreviewText}
-        sourcePath={sourcePath}
-        className={cn(
-          "tw-break-words tw-text-[calc(var(--font-text-size)_-_2px)] tw-font-normal",
-          message.isErrorMessage && "tw-text-error"
-        )}
-        onError={scope?.reportError}
-      />
+      <LivePreviewText {...livePreviewProps} />
     ) : (
       <div ref={contentRef} className={message.isErrorMessage ? "tw-text-error" : ""}></div>
     );
