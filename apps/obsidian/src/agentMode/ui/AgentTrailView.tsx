@@ -102,7 +102,7 @@ export const AgentTrail: React.FC<AgentTrailProps> = ({
   onToggleLivePreview: onToggleLivePreviewProp,
 }) => {
   const answer = agentResponseText(parts);
-  // The preview is a look at one response, so it lasts as long as that response does and starts again in Reading View. A preview that cannot be shown puts the reply back in Reading View instead of leaving it blank.
+  // The preview lasts as long as the response is on screen and starts again in Reading View.
   // https://github.com/Hu-LiHua/obsidian-copilot/issues/4
   const [ownLivePreview, setOwnLivePreview] = React.useState(false);
   // The owner of the response holds the choice, so every row of that response reads the same view; a trail shown on its own keeps its own.

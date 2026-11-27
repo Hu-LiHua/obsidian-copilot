@@ -9,7 +9,7 @@ interface LivePreviewTextProps {
   onError?: (error: unknown) => void;
 }
 
-// The renderer only mounts the host's editor, so every surface of a response can show the same Live Preview. A mount that fails is reported to the owner of the flag, which puts the reply back in Reading View.
+// The renderer only mounts the host's editor, so every surface of a response can show the same Live Preview.
 // https://github.com/Hu-LiHua/obsidian-copilot/issues/4
 export function LivePreviewText({
   text,

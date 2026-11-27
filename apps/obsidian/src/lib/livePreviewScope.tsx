@@ -1,7 +1,7 @@
 import { useLivePreviewAdapter } from "@/lib/livePreview";
 import React from "react";
 
-// The scope carries one response's Live Preview choice to every surface of that response, and the owner of the choice decides what a preview that could not be shown means.
+// One response's Live Preview choice reaches every surface of that response.
 // https://github.com/Hu-LiHua/obsidian-copilot/issues/4
 export interface LivePreviewScope {
   livePreview: boolean;
@@ -23,7 +23,7 @@ interface LivePreviewScopeProviderProps {
   children: React.ReactNode;
 }
 
-// Every surface of one response reads the same flag, so a toggle on the response carries to the subagent prompt and result inside it. The choice is a reading aid that lasts as long as the response is on screen, so reopening a chat starts in Reading View again. An owner that passes the flag in keeps it where it can also read it, which is how a row learns that its response is in Live Preview.
+// Every surface of one response reads the same flag, so a toggle on the response carries to the subagent prompt and result inside it.
 // https://github.com/Hu-LiHua/obsidian-copilot/issues/5
 export function LivePreviewScopeProvider({
   livePreview: livePreviewProp,

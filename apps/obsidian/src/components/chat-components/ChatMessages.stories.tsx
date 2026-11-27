@@ -1,5 +1,7 @@
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useApp } from "@/context";
+import { LivePreviewAdapterProvider } from "@/lib/livePreview";
+import { livePreviewStub } from "@/lib/livePreviewStub";
 import type { Meta, StoryObj } from "@/lib/story";
 import type { ChatMessage } from "@/types/message";
 import React from "react";
@@ -67,4 +69,20 @@ export const SpansTwoDays: StoryObj<PlainChatProps> = {
       sent(0, 9, 9, "AI", "The Order of Time, at about 240 pages. The other two run past 400."),
     ],
   },
+};
+
+// The gallery has no Obsidian editor to mount, so the story shows the raw Markdown the preview would read.
+// https://github.com/Hu-LiHua/obsidian-copilot/issues/4
+const LIVE_PREVIEW_CHAT = [
+  sent(0, 9, 15, "user", "Show me the table as it is written."),
+  sent(0, 9, 15, "AI", "| Month | Reading |\n| --- | --- |\n| Nov | *Thinking, Fast and Slow* |"),
+];
+
+export const LivePreviewOffered: StoryObj<PlainChatProps> = {
+  args: { chatHistory: LIVE_PREVIEW_CHAT },
+  render: () => (
+    <LivePreviewAdapterProvider adapter={livePreviewStub}>
+      <PlainChat chatHistory={LIVE_PREVIEW_CHAT} />
+    </LivePreviewAdapterProvider>
+  ),
 };
