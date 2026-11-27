@@ -1,12 +1,13 @@
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import { Component, Notice, Platform, type App } from "obsidian";
+import { Component, Notice, type App } from "obsidian";
 import type {
   LivePreviewAdapter,
   LivePreviewHandle,
   LivePreviewMountOptions,
 } from "@/lib/livePreview";
 import { logWarn } from "@/logger";
+import { isDesktopRuntime } from "@/utils/desktopRuntime";
 import { withoutDataview } from "@/utils/renderMarkdown";
 
 interface MarkdownEmbed {
@@ -192,10 +193,10 @@ function mountLivePreview(app: App, options: LivePreviewMountOptions): LivePrevi
   };
 }
 
-// The preview needs Obsidian's own editor, which a phone has no use for, so a phone keeps every reply in Reading View.
+// The preview needs Obsidian's own editor, which only the desktop app has, so every other runtime keeps each reply in Reading View.
 // https://github.com/Hu-LiHua/obsidian-copilot/issues/4
 export function createLivePreviewAdapter(app: App): LivePreviewAdapter | null {
-  if (Platform.isMobile) return null;
+  if (!isDesktopRuntime()) return null;
   return {
     mount(options: LivePreviewMountOptions): LivePreviewHandle | null {
       try {
