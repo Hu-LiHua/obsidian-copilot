@@ -2,6 +2,8 @@ import { useApp } from "@/context";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type { AgentMessagePart, StopReason, TurnFileChange } from "@/agentMode/session/types";
 import { AgentTrail } from "@/agentMode/ui/AgentTrailView";
+import { LivePreviewAdapterProvider } from "@/lib/livePreview";
+import { livePreviewStub } from "@/lib/livePreviewStub";
 import type { Meta, StoryObj } from "@/lib/story";
 import React from "react";
 
@@ -171,14 +173,17 @@ const TrailDemo: React.FC<{
   showCompletedDuration?: boolean;
   fileChanges?: TurnFileChange[];
   stopReason?: StopReason;
+  initialLivePreview?: boolean;
 }> = ({
   parts,
   isStreaming = false,
   showCompletedDuration = true,
   fileChanges,
   stopReason = "end_turn",
+  initialLivePreview = false,
 }) => {
   const app = useApp();
+  const [livePreview, setLivePreview] = React.useState(initialLivePreview);
   return (
     <TooltipProvider>
       <AgentTrail
@@ -190,6 +195,8 @@ const TrailDemo: React.FC<{
         app={app}
         turnStopReason={isStreaming ? undefined : stopReason}
         fileChanges={fileChanges}
+        livePreview={livePreview}
+        onToggleLivePreview={() => setLivePreview((shown) => !shown)}
       />
     </TooltipProvider>
   );
@@ -329,5 +336,21 @@ export const CompactionCancelled: StoryObj<AgentTrailProps> = {
 export const CompactionSkipped: StoryObj<AgentTrailProps> = {
   render: () => (
     <TrailDemo parts={[compaction({ status: "skipped" })]} showCompletedDuration={false} />
+  ),
+};
+
+export const LivePreviewOffered: StoryObj<AgentTrailProps> = {
+  render: () => (
+    <LivePreviewAdapterProvider adapter={livePreviewStub}>
+      <TrailDemo parts={TURN} />
+    </LivePreviewAdapterProvider>
+  ),
+};
+
+export const LivePreview: StoryObj<AgentTrailProps> = {
+  render: () => (
+    <LivePreviewAdapterProvider adapter={livePreviewStub}>
+      <TrailDemo parts={TURN} initialLivePreview />
+    </LivePreviewAdapterProvider>
   ),
 };

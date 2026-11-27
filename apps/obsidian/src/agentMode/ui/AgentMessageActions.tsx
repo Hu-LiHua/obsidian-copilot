@@ -1,5 +1,6 @@
 import { AgentTurnDurationIndicator } from "@/agentMode/ui/AgentTurnDurationIndicator";
 import { CopyButton } from "@/components/chat-components/CopyButton";
+import { LivePreviewToggle } from "@/components/chat-components/LivePreviewToggle";
 import { MessageActionButton } from "@/components/chat-components/MessageActionButton";
 import { AssistantResponseFooter } from "@/components/ui/AssistantResponseFooter";
 import { useMessageDrag } from "@/hooks/useMessageDrag";
@@ -36,6 +37,7 @@ export const AgentMessageActions: React.FC<AgentMessageActionsProps> = ({
       timestampMs={timestampMs}
       actions={
         <div className="tw-flex tw-items-center tw-gap-1">
+          <LivePreviewToggle />
           <MessageActionButton
             label="Insert / Replace at cursor"
             icon={TextCursorInput}

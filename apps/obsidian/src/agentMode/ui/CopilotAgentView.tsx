@@ -4,6 +4,7 @@ import type { CustomAgentStore } from "@/agents/CustomAgentStore";
 import { attachChatViewLayoutObservers } from "@/components/chat-components/attachChatViewLayoutObservers";
 import { CHAT_AGENT_VIEWTYPE, COPILOT_AGENT_ICON_ID } from "@/constants";
 import { ChatViewEventTarget, EventTargetContext } from "@/context";
+import { LivePreviewAdapterProvider, type LivePreviewAdapter } from "@/lib/livePreview";
 import CopilotPlugin from "@/main";
 import { registerActiveLeafChangeBridge } from "@/utils/registerActiveLeafChangeBridge";
 import { mountPluginViewRoot, type PluginViewRootHandle } from "@/utils/react/mountPluginViewRoot";
@@ -21,7 +22,8 @@ export default class CopilotAgentView extends ItemView {
     leaf: WorkspaceLeaf,
     private plugin: CopilotPlugin,
     private readonly customAgents: CustomAgentStore | undefined,
-    private readonly hiddenAgentChats: HiddenAgentChats | undefined
+    private readonly hiddenAgentChats: HiddenAgentChats | undefined,
+    private readonly livePreviewAdapter: LivePreviewAdapter | null
   ) {
     super(leaf);
     this.app = plugin.app;
@@ -62,19 +64,21 @@ export default class CopilotAgentView extends ItemView {
 
   private renderTree(): React.ReactNode {
     return (
-      <EventTargetContext.Provider value={this.eventTarget}>
-        <Tooltip.Provider delayDuration={0}>
-          <AgentModeChat
-            plugin={this.plugin}
-            customAgents={this.customAgents}
-            hiddenAgentChats={this.hiddenAgentChats}
-            onSaveChat={(fn) => {
-              this.handleSaveAsNote = fn;
-            }}
-            updateUserMessageHistory={(msg) => this.plugin.updateUserMessageHistory(msg)}
-          />
-        </Tooltip.Provider>
-      </EventTargetContext.Provider>
+      <LivePreviewAdapterProvider adapter={this.livePreviewAdapter}>
+        <EventTargetContext.Provider value={this.eventTarget}>
+          <Tooltip.Provider delayDuration={0}>
+            <AgentModeChat
+              plugin={this.plugin}
+              customAgents={this.customAgents}
+              hiddenAgentChats={this.hiddenAgentChats}
+              onSaveChat={(fn) => {
+                this.handleSaveAsNote = fn;
+              }}
+              updateUserMessageHistory={(msg) => this.plugin.updateUserMessageHistory(msg)}
+            />
+          </Tooltip.Provider>
+        </EventTargetContext.Provider>
+      </LivePreviewAdapterProvider>
     );
   }
 

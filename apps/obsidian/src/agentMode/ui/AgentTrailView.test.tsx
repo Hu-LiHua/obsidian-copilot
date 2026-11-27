@@ -4,27 +4,40 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppContext } from "@/context";
 import { AgentTrail } from "@/agentMode/ui/AgentTrailView";
 import { formatMessageClock } from "@/lib/messageTime";
+import { LivePreviewAdapterProvider } from "@/lib/livePreview";
+import { fakeLivePreviewAdapter } from "@/lib/testing/fakeLivePreviewAdapter";
 import type { AgentMessagePart, TurnFileChange } from "@/agentMode/session/types";
 import { miyoSearchCall } from "@/miyo/agentMode/testing/miyoSearchCall";
 import { excalidrawToolCall } from "@/excalidraw/agentMode/testing/excalidrawToolCall";
 import { AgentTasksProvider } from "@/agentMode/ui/AgentTasksContext";
 import { makeCommandTask, makeTask } from "@/agentMode/ui/testing/taskFixtures";
 
-jest.mock("@/agentMode/ui/AgentMarkdownText", () => ({
-  AgentMarkdownText: ({
-    text,
-    miyoPaths,
-    streaming,
-  }: {
-    text: string;
-    miyoPaths?: string[];
-    streaming?: boolean;
-  }) => (
-    <div data-testid="agent-md" data-streaming={streaming} data-miyo-paths={miyoPaths?.join("|")}>
-      {text}
-    </div>
-  ),
-}));
+jest.mock("@/agentMode/ui/AgentMarkdownText", () => {
+  const { useLivePreviewScope } = jest.requireActual("@/lib/livePreviewScope");
+  return {
+    AgentMarkdownText: ({
+      text,
+      miyoPaths,
+      streaming,
+    }: {
+      text: string;
+      miyoPaths?: string[];
+      streaming?: boolean;
+    }) => {
+      const scope = useLivePreviewScope();
+      return (
+        <div
+          data-testid="agent-md"
+          data-streaming={streaming}
+          data-miyo-paths={miyoPaths?.join("|")}
+          data-live-preview={scope?.livePreview ? "true" : "false"}
+        >
+          {text}
+        </div>
+      );
+    },
+  };
+});
 
 jest.mock("@/utils", () => ({
   cleanMessageForCopy: (s: string) => s.trim(),
@@ -254,6 +267,48 @@ describe("AgentTrail", () => {
     renderTrail({ isStreaming: true, turnStopReason: undefined });
     expect(screen.queryByTitle("Copy")).toBeNull();
     expect(screen.queryByTitle("Insert / Replace at cursor")).toBeNull();
+  });
+
+  it("https://github.com/Hu-LiHua/obsidian-copilot/issues/4 offers Live Preview on a finished response and switches its text segments together", () => {
+    const adapter = fakeLivePreviewAdapter();
+    const app = makeApp();
+    render(
+      <LivePreviewAdapterProvider adapter={adapter}>
+        {trailElement(app, { parts: [text("First"), text("Second")] })}
+      </LivePreviewAdapterProvider>
+    );
+
+    expect(screen.getByTitle("Live Preview")).toBeTruthy();
+    expect(
+      screen
+        .getAllByTestId("agent-md")
+        .every((el) => el.getAttribute("data-live-preview") === "false")
+    ).toBe(true);
+
+    fireEvent.click(screen.getByTitle("Live Preview"));
+
+    expect(
+      screen
+        .getAllByTestId("agent-md")
+        .every((el) => el.getAttribute("data-live-preview") === "true")
+    ).toBe(true);
+  });
+
+  it("https://github.com/Hu-LiHua/obsidian-copilot/issues/4 offers no Live Preview toggle while the reply is still streaming", () => {
+    const adapter = fakeLivePreviewAdapter();
+    const app = makeApp();
+    render(
+      <LivePreviewAdapterProvider adapter={adapter}>
+        {trailElement(app, { isStreaming: true, turnStopReason: undefined })}
+      </LivePreviewAdapterProvider>
+    );
+
+    expect(screen.queryByTitle("Live Preview")).toBeNull();
+  });
+
+  it("https://github.com/Hu-LiHua/obsidian-copilot/issues/4 offers no Live Preview toggle where the host cannot mount one", () => {
+    renderTrail();
+    expect(screen.queryByTitle("Live Preview")).toBeNull();
   });
 
   it("shows the running duration instead of the timestamp while streaming", () => {
