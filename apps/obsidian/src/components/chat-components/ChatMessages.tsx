@@ -7,7 +7,6 @@ import { useDayLabels } from "@/hooks/useDayLabels";
 import { useChatScrolling } from "@/hooks/useChatScrolling";
 import { useSmoothedText } from "@/hooks/useSmoothedText";
 import { groupResponses, joinResponseText } from "@/lib/chatResponses";
-import { LivePreviewScopeProvider } from "@/lib/livePreviewScope";
 import { ChatMessage } from "@/types/message";
 import { App } from "obsidian";
 import React, { memo, useMemo } from "react";
@@ -88,38 +87,32 @@ const ChatMessages = memo(
               key={getMessageKey(chatHistory[messages[0]], messages[0])}
               className="tw-group/response"
             >
-              {/* A quick chat's response reads as one block, so its own reply view covers every message it holds.
-              https://github.com/Hu-LiHua/obsidian-copilot/issues/4 */}
-              <LivePreviewScopeProvider>
-                {messages.map((index) => {
-                  const message = chatHistory[index];
-                  const endsResponse = index === replies.at(-1);
-                  return (
-                    message.isVisible && (
-                      <div key={getMessageKey(message, index)} className="tw-w-full">
-                        {dayLabels.has(index) ? (
-                          <ChatDayLabel label={dayLabels.get(index)!} />
-                        ) : null}
-                        <ChatSingleMessage
-                          message={message}
-                          sourcePath={sourcePath}
-                          app={app}
-                          isStreaming={false}
-                          responseText={
-                            endsResponse
-                              ? joinResponseText(replies.map((i) => chatHistory[i].message))
-                              : undefined
-                          }
-                          hideFooter={replies.includes(index) && !endsResponse}
-                          onRegenerate={() => onRegenerate(index)}
-                          onEdit={(newMessage) => onEdit(index, newMessage)}
-                          onDelete={() => onDelete(index)}
-                        />
-                      </div>
-                    )
-                  );
-                })}
-              </LivePreviewScopeProvider>
+              {messages.map((index) => {
+                const message = chatHistory[index];
+                const endsResponse = index === replies.at(-1);
+                return (
+                  message.isVisible && (
+                    <div key={getMessageKey(message, index)} className="tw-w-full">
+                      {dayLabels.has(index) ? <ChatDayLabel label={dayLabels.get(index)!} /> : null}
+                      <ChatSingleMessage
+                        message={message}
+                        sourcePath={sourcePath}
+                        app={app}
+                        isStreaming={false}
+                        responseText={
+                          endsResponse
+                            ? joinResponseText(replies.map((i) => chatHistory[i].message))
+                            : undefined
+                        }
+                        hideFooter={replies.includes(index) && !endsResponse}
+                        onRegenerate={() => onRegenerate(index)}
+                        onEdit={(newMessage) => onEdit(index, newMessage)}
+                        onDelete={() => onDelete(index)}
+                      />
+                    </div>
+                  )
+                );
+              })}
             </div>
           ))}
           {currentAiMessage ? (

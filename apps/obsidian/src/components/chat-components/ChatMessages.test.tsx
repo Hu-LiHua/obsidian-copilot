@@ -1,8 +1,6 @@
 import React from "react";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import ChatMessages, { isChatEmpty } from "@/components/chat-components/ChatMessages";
-import { LivePreviewAdapterProvider } from "@/lib/livePreview";
-import { fakeLivePreviewAdapter } from "@/lib/testing/fakeLivePreviewAdapter";
 import { ChatMessage } from "@/types/message";
 
 const mockScrollState = { paused: false, onResume: jest.fn() };
@@ -19,7 +17,7 @@ jest.mock("@/hooks/useChatScrolling", () => ({
 }));
 jest.mock("@/components/chat-components/ChatSingleMessage", () => ({
   __esModule: true,
-  default: function MockChatSingleMessage({
+  default: ({
     sourcePath,
     message,
     responseText,
@@ -29,22 +27,16 @@ jest.mock("@/components/chat-components/ChatSingleMessage", () => ({
     message: ChatMessage;
     responseText?: string;
     hideFooter?: boolean;
-  }) {
-    const scopeModule =
-      jest.requireActual<typeof import("@/lib/livePreviewScope")>("@/lib/livePreviewScope");
-    const scope = scopeModule.useLivePreviewScope();
-    return (
-      <div
-        data-testid="message-source"
-        data-text={message.message}
-        data-response-text={responseText}
-        data-row={hideFooter ? "none" : "shown"}
-        data-preview-scope={scope === null ? "none" : scope.supported ? "supported" : "unsupported"}
-      >
-        {sourcePath}
-      </div>
-    );
-  },
+  }) => (
+    <div
+      data-testid="message-source"
+      data-text={message.message}
+      data-response-text={responseText}
+      data-row={hideFooter ? "none" : "shown"}
+    >
+      {sourcePath}
+    </div>
+  ),
 }));
 
 function message(overrides: Partial<ChatMessage> = {}): ChatMessage {
@@ -78,44 +70,6 @@ describe("ChatMessages", () => {
         />
       );
       expect(screen.getByTestId("message-source").textContent).toBe("chat/Conversation.md");
-    });
-
-    it("gives a quick chat's response a Live Preview scope of its own so the reply can be read as a note https://github.com/Hu-LiHua/obsidian-copilot/issues/4", () => {
-      render(
-        <LivePreviewAdapterProvider adapter={fakeLivePreviewAdapter()}>
-          <ChatMessages
-            chatHistory={[
-              message({ message: "question" }),
-              message({ message: "answer", sender: "AI" }),
-            ]}
-            currentAiMessage=""
-            app={{} as never}
-            onRegenerate={() => undefined}
-            onEdit={() => undefined}
-            onDelete={() => undefined}
-          />
-        </LivePreviewAdapterProvider>
-      );
-      const scopes = screen
-        .getAllByTestId("message-source")
-        .map((element) => element.getAttribute("data-preview-scope"));
-      expect(scopes).toEqual(["supported", "supported"]);
-    });
-
-    it("keeps a quick chat's response in Reading View when no host can mount the editor https://github.com/Hu-LiHua/obsidian-copilot/issues/4", () => {
-      render(
-        <ChatMessages
-          chatHistory={[message({ message: "answer", sender: "AI" })]}
-          currentAiMessage=""
-          app={{} as never}
-          onRegenerate={() => undefined}
-          onEdit={() => undefined}
-          onDelete={() => undefined}
-        />
-      );
-      expect(screen.getByTestId("message-source").getAttribute("data-preview-scope")).toBe(
-        "unsupported"
-      );
     });
 
     it("paces a streamed burst into the reply word by word instead of showing it at once https://github.com/Brevilabs/obsidian-copilot-private/issues/886", () => {

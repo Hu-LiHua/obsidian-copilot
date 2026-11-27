@@ -3,7 +3,6 @@ import Chat from "@/components/Chat";
 import { CHAT_VIEWTYPE } from "@/constants";
 import { recordViewTop } from "@/components/recordViewTop";
 import { ChatViewEventTarget, EventTargetContext } from "@/context";
-import { LivePreviewAdapterProvider, type LivePreviewAdapter } from "@/lib/livePreview";
 import CopilotPlugin from "@/main";
 import { registerActiveLeafChangeBridge } from "@/utils/registerActiveLeafChangeBridge";
 import { mountPluginViewRoot, type PluginViewRootHandle } from "@/utils/react/mountPluginViewRoot";
@@ -23,8 +22,7 @@ export default class CopilotView extends ItemView {
 
   constructor(
     leaf: WorkspaceLeaf,
-    private plugin: CopilotPlugin,
-    private livePreviewAdapter: LivePreviewAdapter | null
+    private plugin: CopilotPlugin
   ) {
     super(leaf);
     this.app = plugin.app;
@@ -103,17 +101,13 @@ export default class CopilotView extends ItemView {
     return (
       <EventTargetContext.Provider value={this.eventTarget}>
         <Tooltip.Provider delayDuration={0}>
-          {/* The chat cannot reach Obsidian's internal editor, so the host hands it the adapter that mounts a read-only Live Preview.
-          https://github.com/Hu-LiHua/obsidian-copilot/issues/4 */}
-          <LivePreviewAdapterProvider adapter={this.livePreviewAdapter}>
-            <Chat
-              chainManager={this.chainManager}
-              updateUserMessageHistory={this.handleUpdateUserMessageHistory}
-              plugin={this.plugin}
-              onSaveChat={this.setSaveHandler}
-              chatUIState={this.plugin.chatUIState}
-            />
-          </LivePreviewAdapterProvider>
+          <Chat
+            chainManager={this.chainManager}
+            updateUserMessageHistory={this.handleUpdateUserMessageHistory}
+            plugin={this.plugin}
+            onSaveChat={this.setSaveHandler}
+            chatUIState={this.plugin.chatUIState}
+          />
         </Tooltip.Provider>
       </EventTargetContext.Provider>
     );
