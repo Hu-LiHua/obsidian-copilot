@@ -1,8 +1,12 @@
 import { AgentMarkdownText } from "@/agentMode/ui/AgentMarkdownText";
+import { fakeLivePreviewAdapter } from "@/lib/testing/fakeLivePreviewAdapter";
+import { LivePreviewToggle } from "@/components/chat-components/LivePreviewToggle";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppContext } from "@/context";
+import { LivePreviewAdapterProvider } from "@/lib/livePreview";
+import { LivePreviewScopeProvider } from "@/lib/livePreviewScope";
 import { renderMarkdown } from "@/utils/renderMarkdown";
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { App, TFile } from "obsidian";
 import * as React from "react";
 
@@ -95,6 +99,55 @@ describe("AgentMarkdownText", () => {
         expect.anything(),
         true
       );
+    });
+
+    it("shows the reply in Live Preview once the response is toggled", () => {
+      const app = new App();
+      const adapter = fakeLivePreviewAdapter();
+      jest.mocked(renderMarkdown).mockReset();
+      jest.mocked(renderMarkdown).mockResolvedValue(undefined);
+
+      render(
+        <AppContext.Provider value={app}>
+          <LivePreviewAdapterProvider adapter={adapter}>
+            <LivePreviewScopeProvider>
+              <TooltipProvider>
+                <LivePreviewToggle />
+                <AgentMarkdownText app={app} text="$$x^2$$" />
+              </TooltipProvider>
+            </LivePreviewScopeProvider>
+          </LivePreviewAdapterProvider>
+        </AppContext.Provider>
+      );
+
+      expect(renderMarkdown).toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole("button", { name: "Live Preview" }));
+
+      expect(adapter.mounts).toHaveLength(1);
+      expect(adapter.mounts[0].text).toBe("$$x^2$$");
+    });
+
+    it("keeps the reply in Reading View when the host offers no Live Preview", () => {
+      const app = new App();
+      jest.mocked(renderMarkdown).mockReset();
+      jest.mocked(renderMarkdown).mockResolvedValue(undefined);
+
+      render(
+        <AppContext.Provider value={app}>
+          <LivePreviewAdapterProvider adapter={null}>
+            <LivePreviewScopeProvider>
+              <TooltipProvider>
+                <LivePreviewToggle />
+                <AgentMarkdownText app={app} text="$$x^2$$" />
+              </TooltipProvider>
+            </LivePreviewScopeProvider>
+          </LivePreviewAdapterProvider>
+        </AppContext.Provider>
+      );
+
+      expect(screen.queryByRole("button", { name: "Live Preview" })).toBeNull();
+      expect(renderMarkdown).toHaveBeenCalled();
     });
   });
 });

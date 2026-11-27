@@ -1,4 +1,5 @@
 import { startReleaseUpdateCheck } from "@/services/releaseUpdateNotice";
+import { createLivePreviewAdapter } from "@/editor/livePreview/livePreviewHost";
 import { releaseCursorAssociation } from "@/editor/releaseCursorAssociation";
 import { registerNoteHeaderAction } from "@/editor/registerNoteHeaderAction";
 import type { AgentSessionManager, HiddenAgentChats, SkillManager } from "@/agentMode";
@@ -535,9 +536,12 @@ export default class CopilotPlugin extends Plugin implements CopilotStartup {
       const SidebarView = this.SessionsSidebarView;
       const PreviewView = this.PlanPreviewView;
       const DiffView = this.TurnDiffView;
+      // The chat cannot reach Obsidian's internal editor, so the host hands it the adapter that mounts a read-only Live Preview.
+      // https://github.com/Hu-LiHua/obsidian-copilot/issues/4
+      const livePreviewAdapter = createLivePreviewAdapter(this.app);
       this.startedViewCreators.set(
         CHAT_AGENT_VIEWTYPE,
-        (leaf) => new AgentView(leaf, this, customAgents, hiddenAgentChats)
+        (leaf) => new AgentView(leaf, this, customAgents, hiddenAgentChats, livePreviewAdapter)
       );
       this.startedViewCreators.set(
         SESSIONS_SIDEBAR_VIEWTYPE,

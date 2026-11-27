@@ -29,6 +29,8 @@ import { AgentTurnDurationIndicator } from "@/agentMode/ui/AgentTurnDurationIndi
 import type { MemorySaveTrail } from "@/agents/agentMode/memorySaveCards";
 import { useAgentTasks, type AgentTasksContextValue } from "@/agentMode/ui/AgentTasksContext";
 import { AssistantResponseFooter } from "@/components/ui/AssistantResponseFooter";
+import { LivePreviewScopeProvider } from "@/lib/livePreviewScope";
+import { logWarn } from "@/logger";
 import { getVaultBase } from "@/utils/vaultPath";
 import { App } from "obsidian";
 
@@ -48,6 +50,8 @@ interface AgentTrailProps {
   memorySaves?: MemorySaveTrail | null;
   onOpenFileChange?: (change: TurnFileChange) => void;
   onContinue?: () => void;
+  livePreview?: boolean;
+  onToggleLivePreview?: () => void;
 }
 
 const noopOpenFileChange = () => {};
@@ -94,8 +98,25 @@ export const AgentTrail: React.FC<AgentTrailProps> = ({
   memorySaves,
   onOpenFileChange = noopOpenFileChange,
   onContinue,
+  livePreview: livePreviewProp,
+  onToggleLivePreview: onToggleLivePreviewProp,
 }) => {
   const answer = agentResponseText(parts);
+  // The preview is a look at one response, so it lasts as long as that response does and starts again in Reading View. A preview that cannot be shown puts the reply back in Reading View instead of leaving it blank.
+  // https://github.com/Hu-LiHua/obsidian-copilot/issues/4
+  const [ownLivePreview, setOwnLivePreview] = React.useState(false);
+  const livePreview = livePreviewProp ?? ownLivePreview;
+  const onToggleLivePreview = React.useCallback(() => {
+    if (onToggleLivePreviewProp) {
+      onToggleLivePreviewProp();
+      return;
+    }
+    setOwnLivePreview((shown) => !shown);
+  }, [onToggleLivePreviewProp]);
+  const onPreviewError = React.useCallback((error: unknown) => {
+    logWarn("[LivePreview] the reply could not be shown as Live Preview", error);
+    setOwnLivePreview(false);
+  }, []);
   // A failed turn's error is stored as message text, which a reply with parts never shows.
   // https://github.com/Brevilabs/obsidian-copilot-private/issues/633
   const notice =
@@ -127,26 +148,36 @@ export const AgentTrail: React.FC<AgentTrailProps> = ({
     ) : null;
 
   return (
-    <div className="tw-group/response tw-flex tw-flex-col tw-gap-1">
-      <LinearTrail
-        parts={parts}
-        isStreaming={isStreaming}
-        app={app}
-        memorySaves={memorySaves ?? null}
-      />
-      {notice ? (
-        <div className="tw-text-error">
-          <AgentMarkdownText text={notice} app={app} />
-        </div>
-      ) : null}
-      {turnStopReason !== undefined && fileChanges && fileChanges.length > 0 ? (
-        <FilesChangedCard changes={fileChanges} onOpen={onOpenFileChange} />
-      ) : null}
-      {hasRunningDuration && !compactionOnly ? (
-        <AgentTurnDurationIndicator status="running" startedAtMs={turnStartedAtMs} />
-      ) : null}
-      {compactionOnly || hideFooter ? null : footer}
-    </div>
+    <LivePreviewScopeProvider
+      livePreview={livePreview}
+      onToggle={onToggleLivePreview}
+      onError={onPreviewError}
+    >
+      <div className="tw-group/response tw-flex tw-flex-col tw-gap-1">
+        <LinearTrail
+          parts={parts}
+          isStreaming={isStreaming}
+          app={app}
+          memorySaves={memorySaves ?? null}
+        />
+        {notice ? (
+          <div className="tw-text-error">
+            {/* A notice is Copilot's note about the reply, not the reply's own words, so it keeps reading as usual.
+            https://github.com/Hu-LiHua/obsidian-copilot/issues/5 */}
+            <LivePreviewScopeProvider livePreview={false}>
+              <AgentMarkdownText text={notice} app={app} />
+            </LivePreviewScopeProvider>
+          </div>
+        ) : null}
+        {turnStopReason !== undefined && fileChanges && fileChanges.length > 0 ? (
+          <FilesChangedCard changes={fileChanges} onOpen={onOpenFileChange} />
+        ) : null}
+        {hasRunningDuration && !compactionOnly ? (
+          <AgentTurnDurationIndicator status="running" startedAtMs={turnStartedAtMs} />
+        ) : null}
+        {compactionOnly || hideFooter ? null : footer}
+      </div>
+    </LivePreviewScopeProvider>
   );
 };
 
