@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-11-23T03:11:15Z",
-  "updated_at": "2026-11-28T09:28:17Z",
+  "updated_at": "2026-11-28T10:13:55Z",
   "files": {
     ".claude/CLAUDE.md": {
       "role": "index",
@@ -13020,9 +13020,9 @@
     },
     "internal-docs/research/annotation-batch-patterns.md": {
       "role": "index",
-      "sha256": "8050e72a8e4b293bf67d9b52362a545d0857c01281ef116d4fd1f4ec29484df8",
-      "size": 26939,
-      "normalized_sha256": "8050e72a8e4b293bf67d9b52362a545d0857c01281ef116d4fd1f4ec29484df8"
+      "sha256": "367703d4710a1ea5fc5562b8ae3c0a31dc97e099e6013e81e224964aa390a5ee",
+      "size": 29898,
+      "normalized_sha256": "367703d4710a1ea5fc5562b8ae3c0a31dc97e099e6013e81e224964aa390a5ee"
     },
     "jest.config.js": {
       "role": "index",
