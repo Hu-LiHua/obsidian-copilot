@@ -1,0 +1,1748 @@
+<!DOCTYPE html>
+<!--
+  PROTOTYPE —— Issue #3「极简选区批注弹框 · 精准复刻 Quick Ask 风格」
+  1:1 对照仓库真实组件样式与尺寸：
+    - QuickAskOverlay.tsx: width=min(420, host-24), offset=6px, shadow-lg, fade-in 0.2s
+    - QuickAskPanel.tsx: rounded-lg, border-border, bg-primary, 16px drag bar (64x5px pill), right-2 top-1 X
+    - QuickAskInput.tsx: px-3 pt-2 pb-1 外壳 + min-h-12 (48px) max-h-48 px-1 py-2 text-sm 输入区
+    - QuickAskFooter.tsx: border-t border-border px-3 py-1.5，左右布局，h-7 (28px) 按钮
+    - AgentChat (右侧): 复刻用户截图暖米纸主题、Auto 红框、4.4 笔记 Current + 推导 L228 徽章样式
+  交互规则（已确认最简首版）：
+    - Selection Toolbar 双按钮（仅编辑视图）：Add to Copilot（静默引用） | Annotate（弹批注框）
+    - 点 Annotate 只弹窗、不添加徽章；输入非空点 Done / Enter 才添加到输入框并把焦点还给笔记
+    - 输入框上方徽章外观与 tooltip 与现有完全一致，无批注标记、无预览、点击无响应
+    - 笔记内无额外行高亮，仅在弹窗打开期间保留 Quick Ask 同款选中区底色
+    - 空主输入框时，只要有引用附带了批注指令即可直接发送
+-->
+<html lang="zh-CN" data-theme="parchment">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Prototype · Annotate Excerpt (Quick Ask Style)</title>
+<style>
+  /* ---------------- 三套 Obsidian 真实主题变量 ---------------- */
+  :root,
+  [data-theme="parchment"] {
+    --background-primary: #f6f2e4;
+    --background-primary-alt: #efe9d6;
+    --background-secondary: #ece5cf;
+    --background-secondary-alt: #e4dcc4;
+    --background-modifier-hover: rgba(65, 55, 35, 0.065);
+    --background-modifier-border: #dad2ba;
+    --background-modifier-border-hover: #c5bba0;
+    --background-modifier-border-focus: #a59a7d;
+    --text-normal: #2f2d25;
+    --text-muted: #6c6757;
+    --text-faint: #9b9482;
+    --interactive-accent: #2f6699;
+    --interactive-accent-hover: #255582;
+    --text-on-accent: #ffffff;
+    --text-selection: rgba(47, 102, 153, 0.22);
+    --color-red-rgb: 214, 92, 86;
+    --overlay-shadow: 0 10px 28px rgba(45, 38, 22, 0.16), 0 2px 8px rgba(45, 38, 22, 0.08);
+    --toolbar-shadow: 0 4px 14px rgba(45, 38, 22, 0.14), 0 1px 3px rgba(45, 38, 22, 0.08);
+    --badge-shadow: 0 1px 2px rgba(45, 38, 22, 0.08);
+  }
+
+  [data-theme="light"] {
+    --background-primary: #ffffff;
+    --background-primary-alt: #fafafa;
+    --background-secondary: #f5f5f5;
+    --background-secondary-alt: #ebebeb;
+    --background-modifier-hover: rgba(0, 0, 0, 0.055);
+    --background-modifier-border: #e0e0e0;
+    --background-modifier-border-hover: #c8c8c8;
+    --background-modifier-border-focus: #a8a8a8;
+    --text-normal: #222222;
+    --text-muted: #5c5c5c;
+    --text-faint: #999999;
+    --interactive-accent: #705dcf;
+    --interactive-accent-hover: #5e4cc0;
+    --text-on-accent: #ffffff;
+    --text-selection: rgba(112, 93, 207, 0.22);
+    --color-red-rgb: 218, 86, 78;
+    --overlay-shadow: 0 10px 30px rgba(0, 0, 0, 0.14), 0 2px 8px rgba(0, 0, 0, 0.08);
+    --toolbar-shadow: 0 4px 14px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08);
+    --badge-shadow: 0 1px 2px rgba(0, 0, 0, 0.07);
+  }
+
+  [data-theme="dark"] {
+    --background-primary: #1e1e1e;
+    --background-primary-alt: #242424;
+    --background-secondary: #262626;
+    --background-secondary-alt: #303030;
+    --background-modifier-hover: rgba(255, 255, 255, 0.07);
+    --background-modifier-border: #363636;
+    --background-modifier-border-hover: #4a4a4a;
+    --background-modifier-border-focus: #666666;
+    --text-normal: #dadada;
+    --text-muted: #a3a3a3;
+    --text-faint: #6f6f6f;
+    --interactive-accent: #8b77f8;
+    --interactive-accent-hover: #9b89fa;
+    --text-on-accent: #ffffff;
+    --text-selection: rgba(139, 119, 248, 0.28);
+    --color-red-rgb: 235, 100, 95;
+    --overlay-shadow: 0 16px 40px rgba(0, 0, 0, 0.48), 0 2px 10px rgba(0, 0, 0, 0.32);
+    --toolbar-shadow: 0 6px 18px rgba(0, 0, 0, 0.42), 0 1px 4px rgba(0, 0, 0, 0.28);
+    --badge-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  }
+
+  :root {
+    --radius-l: 10px;
+    --radius-m: 6px;
+    --radius-s: 4px;
+    --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    --font-text: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--background-secondary);
+    color: var(--text-normal);
+    font: 13.5px/1.5 var(--font-ui);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font: inherit; color: inherit; }
+  svg { display: inline-block; vertical-align: middle; flex: none; }
+
+  /* ---------------- 原型控制顶栏 ---------------- */
+  .proto-bar {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 14px;
+    background: var(--background-secondary-alt);
+    border-bottom: 1px solid var(--background-modifier-border);
+    font-size: 12px;
+    flex-wrap: wrap;
+  }
+  .proto-title {
+    font-weight: 600;
+    color: var(--text-normal);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .proto-pill {
+    font-size: 10.5px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--interactive-accent) 14%, transparent);
+    color: var(--interactive-accent);
+  }
+  .seg {
+    display: inline-flex;
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    padding: 2px;
+    gap: 2px;
+  }
+  .seg button {
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    padding: 2px 9px;
+    border-radius: 4px;
+    font-size: 11.5px;
+    cursor: pointer;
+    transition: background .12s, color .12s;
+  }
+  .seg button.active {
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-weight: 600;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  }
+  .proto-bar .spacer { flex: 1; }
+  .proto-btn {
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-primary);
+    color: var(--text-muted);
+    border-radius: 6px;
+    padding: 3px 10px;
+    font-size: 11.5px;
+    cursor: pointer;
+  }
+  .proto-btn:hover { color: var(--text-normal); border-color: var(--background-modifier-border-hover); }
+
+  /* ---------------- 主工作区 ---------------- */
+  .obsidian-shell {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 1fr 390px;
+  }
+
+  /* ---------------- 左侧：Obsidian 笔记叶 ---------------- */
+  .markdown-leaf {
+    position: relative;
+    background: var(--background-primary);
+    border-right: 1px solid var(--background-modifier-border);
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+  }
+  .obsidian-tab-bar {
+    height: 36px;
+    padding: 0 12px;
+    background: var(--background-secondary);
+    border-bottom: 1px solid var(--background-modifier-border);
+    display: flex;
+    align-items: flex-end;
+    gap: 6px;
+    flex: none;
+  }
+  .obsidian-tab {
+    height: 30px;
+    padding: 0 12px;
+    border-radius: 6px 6px 0 0;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-bottom: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--text-normal);
+  }
+  .tab-bar-hint {
+    margin-left: auto;
+    align-self: center;
+    font-size: 11.5px;
+    color: var(--text-faint);
+  }
+  .focus-indicator {
+    align-self: center;
+    font-size: 11px;
+    padding: 1px 7px;
+    border-radius: 4px;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-primary);
+    color: var(--text-muted);
+  }
+  .focus-indicator.in-note {
+    color: var(--interactive-accent);
+    border-color: color-mix(in srgb, var(--interactive-accent) 40%, transparent);
+  }
+
+  .cm-editor-host {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .cm-scroller {
+    height: 100%;
+    overflow-y: auto;
+    padding: 24px 32px 120px;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .cm-sizer {
+    max-width: 680px;
+    margin: 0 auto;
+    position: relative;
+  }
+  .note-h1 {
+    font-size: 24px;
+    font-weight: 700;
+    margin: 0 0 16px 40px;
+    letter-spacing: -0.01em;
+  }
+  .cm-line {
+    display: flex;
+    align-items: baseline;
+    padding: 2.5px 8px 2.5px 0;
+    border-radius: 3px;
+    cursor: text;
+    font-family: var(--font-text);
+  }
+  .cm-line:hover { background: var(--background-modifier-hover); }
+  .cm-line .cm-gutter {
+    width: 34px;
+    flex: none;
+    text-align: right;
+    padding-right: 12px;
+    font: 11px/1.9 var(--font-mono);
+    color: var(--text-faint);
+    opacity: 0.7;
+    user-select: none;
+  }
+  .cm-line .cm-content {
+    flex: 1;
+    min-width: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 15px;
+    line-height: 1.7;
+  }
+  .cm-line.is-heading .cm-content {
+    font-size: 18px;
+    font-weight: 650;
+    line-height: 1.5;
+    padding-top: 6px;
+  }
+  /* 仅在划选或弹窗打开期间显示 QuickAsk 同款 SelectionHighlight，无额外持久行高亮 */
+  .cm-line.copilot-selection-highlight {
+    background: var(--text-selection);
+    border-radius: 2px;
+  }
+
+  /* ---------------- Selection Toolbar 双按钮 ---------------- */
+  .selection-toolbar {
+    position: absolute;
+    z-index: 20;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px 4px;
+    border-radius: 8px;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    box-shadow: var(--toolbar-shadow);
+    animation: toolbar-in .12s ease-out;
+  }
+  @keyframes toolbar-in {
+    from { opacity: 0; transform: translateY(3px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .selection-toolbar button {
+    border: none;
+    background: transparent;
+    color: var(--text-normal);
+    height: 26px;
+    padding: 0 9px;
+    border-radius: 5px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+  }
+  .selection-toolbar button:hover {
+    background: var(--background-modifier-hover);
+  }
+  .selection-toolbar button.is-annotate:hover {
+    color: var(--interactive-accent);
+  }
+  .selection-toolbar .tb-sep {
+    width: 1px;
+    height: 14px;
+    background: var(--background-modifier-border);
+    margin: 0 2px;
+  }
+
+  /* ---------------- 1:1 复刻 QuickAskOverlay & QuickAskPanel ---------------- */
+  .copilot-quick-ask-overlay-root {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 30;
+  }
+  .copilot-quick-ask-overlay {
+    position: absolute;
+    pointer-events: auto;
+    z-index: 30;
+    animation: copilot-quick-ask-fade-in 0.2s ease-out;
+  }
+  .copilot-quick-ask-overlay.closing {
+    animation: copilot-quick-ask-fade-out 0.16s ease-in forwards;
+  }
+  @keyframes copilot-quick-ask-fade-in {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes copilot-quick-ask-fade-out {
+    from { opacity: 1; transform: translateY(0); }
+    to { opacity: 0; transform: translateY(-8px); }
+  }
+
+  /* 对照 QuickAskPanel.tsx line 224:
+     tw-group tw-relative tw-flex tw-size-full tw-flex-col tw-rounded-lg tw-border tw-border-solid tw-border-border tw-bg-primary tw-shadow-lg */
+  .quick-ask-panel {
+    position: relative;
+    display: flex;
+    width: 100%;
+    flex-direction: column;
+    border-radius: var(--radius-l);
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-primary);
+    box-shadow: var(--overlay-shadow);
+  }
+  .quick-ask-panel.qa-orig {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+
+  /* Drag header: tw-relative tw-flex-none */
+  .qa-top-bar {
+    position: relative;
+    flex: none;
+  }
+  /* tw-flex tw-h-4 tw-cursor-grab tw-touch-none tw-items-center tw-justify-center */
+  .qa-drag-handle {
+    display: flex;
+    height: 16px;
+    cursor: grab;
+    touch-action: none;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-l) var(--radius-l) 0 0;
+    transition: background-color 0.12s ease;
+  }
+  .qa-drag-handle:hover {
+    background: color-mix(in srgb, var(--background-modifier-hover) 55%, transparent);
+  }
+  .qa-drag-handle:active { cursor: grabbing; }
+  /* tw-h-[5px] tw-w-16 tw-rounded-sm */
+  .qa-drag-pill {
+    height: 5px;
+    width: 64px;
+    border-radius: var(--radius-s);
+    background: color-mix(in srgb, var(--text-muted) 40%, transparent);
+    transition: background-color 0.12s ease;
+  }
+  .qa-drag-handle:hover .qa-drag-pill {
+    background: color-mix(in srgb, var(--text-muted) 65%, transparent);
+  }
+
+  /* Close button: tw-absolute tw-right-2 tw-top-1 tw-rounded tw-p-1 tw-text-normal */
+  .qa-close-btn {
+    position: absolute;
+    right: 8px;
+    top: 4px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    border-radius: 4px;
+    padding: 4px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    transition: background-color 0.12s ease, color 0.12s ease;
+  }
+  .qa-close-btn:hover {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+  }
+
+  /* QuickAskInput.tsx wrapper: tw-px-3 tw-pb-1 tw-pt-2 */
+  .qa-input-outer {
+    padding: 8px 12px 4px;
+  }
+  .qa-input-box {
+    position: relative;
+  }
+  /* ContentEditable: tw-max-h-48 tw-min-h-12 tw-w-full tw-px-1 tw-py-2 tw-pr-8 tw-text-sm tw-text-normal */
+  .qa-content-editable {
+    width: 100%;
+    min-height: 48px;
+    max-height: 192px;
+    overflow-y: auto;
+    border: none;
+    background: transparent;
+    padding: 8px 32px 8px 4px;
+    font-family: var(--font-ui);
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--text-normal);
+    outline: none;
+    resize: none;
+    display: block;
+  }
+  .qa-content-editable::placeholder {
+    color: color-mix(in srgb, var(--text-muted) 60%, transparent);
+  }
+
+  /* QuickAskFooter.tsx:
+     tw-mt-auto tw-flex tw-items-center tw-justify-between tw-gap-2 tw-border-0 tw-border-t tw-border-solid tw-border-border tw-px-3 tw-py-1.5 */
+  .qa-footer {
+    margin-top: auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    border-top: 1px solid var(--background-modifier-border);
+    padding: 7px 12px;
+  }
+  .qa-footer-left {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 6px;
+  }
+  .qa-footer-right {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 6px;
+  }
+
+  /* 左侧极简位置标签（不堆文字提示，让右侧按钮呼吸） */
+  .qa-anchor-hint {
+    font-size: 11.5px;
+    color: var(--text-faint);
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+  }
+  .qa-anchor-loc {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    padding: 1px 6px;
+    border-radius: 5px;
+    flex: none;
+  }
+
+  /* QuickAskFooter 里的控件样式（对照版本） */
+  .qa-ghost-select {
+    height: 24px;
+    padding: 0 8px;
+    border: none;
+    border-radius: var(--radius-m);
+    background: transparent;
+    color: var(--text-normal);
+    font-size: 12px;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+  }
+  .qa-ghost-select:hover {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+  }
+  .qa-checkbox-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .qa-checkbox-wrap input {
+    accent-color: var(--interactive-accent);
+    width: 14px;
+    height: 14px;
+    margin: 0;
+    cursor: pointer;
+  }
+
+  /* 图标主按钮（QuickAsk 原版 Send） */
+  .qa-btn-primary-icon {
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: var(--radius-m);
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+    transition: background-color 0.12s ease, opacity 0.12s ease;
+  }
+  .qa-btn-primary-icon:hover:not(:disabled) {
+    background: var(--interactive-accent-hover);
+  }
+  .qa-btn-primary-icon:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+
+  /* 打磨后的 Cancel / Done 按钮体系（统一 28px 高度、光学对齐、克制微阴影与干净禁用态） */
+  .qa-action-btn {
+    height: 28px;
+    padding: 0 11px;
+    border-radius: var(--radius-m);
+    font-size: 12.5px;
+    font-weight: 500;
+    letter-spacing: -0.005em;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.14s ease, border-color 0.14s ease, color 0.14s ease, box-shadow 0.14s ease, transform 0.06s ease;
+  }
+  .qa-action-btn:active:not(:disabled) {
+    transform: translateY(0.5px);
+  }
+  .qa-action-btn:focus-visible {
+    outline: 2px solid var(--interactive-accent);
+    outline-offset: 1px;
+  }
+
+  /* Cancel 样式 A: Obsidian 原生细腻描边次按钮 */
+  .qa-btn-cancel-bordered {
+    background: var(--background-primary-alt);
+    border: 1px solid var(--background-modifier-border);
+    color: var(--text-muted);
+    box-shadow: 0 1px 1px rgba(0, 0, 0, 0.035);
+  }
+  .qa-btn-cancel-bordered:hover {
+    background: var(--background-modifier-hover);
+    border-color: var(--background-modifier-border-hover);
+    color: var(--text-normal);
+  }
+
+  /* Cancel 样式 B: 轻量无边框文字次按钮（参考 ChatInput editMode） */
+  .qa-btn-cancel-ghost {
+    padding: 0 9px;
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-muted);
+  }
+  .qa-btn-cancel-ghost:hover {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+  }
+
+  /* Done 主按钮：Obsidian mod-cta 质感（内高光 + 微描边 + 中性禁用态避免糊蓝） */
+  .qa-btn-done {
+    padding: 0 12px;
+    background: var(--interactive-accent);
+    border: 1px solid color-mix(in srgb, var(--interactive-accent) 82%, #000);
+    color: var(--text-on-accent);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  }
+  .qa-btn-done:hover:not(:disabled) {
+    background: var(--interactive-accent-hover);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  }
+  .qa-btn-done:disabled {
+    background: var(--background-secondary);
+    border-color: var(--background-modifier-border);
+    color: var(--text-faint);
+    box-shadow: none;
+    cursor: default;
+  }
+
+  /* 内嵌键帽（Keycap 方案） */
+  .qa-keycap {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    line-height: 1;
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-weight: 500;
+  }
+  .qa-btn-cancel-bordered .qa-keycap,
+  .qa-btn-cancel-ghost .qa-keycap {
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    color: var(--text-faint);
+  }
+  .qa-btn-done .qa-keycap {
+    background: rgba(255, 255, 255, 0.18);
+    border: 1px solid rgba(255, 255, 255, 0.24);
+    color: rgba(255, 255, 255, 0.92);
+  }
+  .qa-btn-done:disabled .qa-keycap {
+    background: var(--background-primary-alt);
+    border-color: var(--background-modifier-border);
+    color: var(--text-faint);
+  }
+
+  /* Quick Ask 原版消息流（对照模式） */
+  .qa-orig-messages {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px 12px;
+    max-height: 210px;
+    overflow-y: auto;
+  }
+  .qa-orig-user {
+    align-self: flex-end;
+    max-width: 85%;
+    border-radius: 8px 8px 2px 8px;
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    padding: 7px 12px;
+    font-size: 13.5px;
+  }
+  .qa-orig-ai {
+    align-self: flex-start;
+    max-width: 95%;
+    border-radius: 8px 8px 8px 2px;
+    background: var(--background-secondary);
+    padding: 8px 12px;
+    font-size: 13.5px;
+  }
+  .qa-resize-l, .qa-resize-r {
+    position: absolute;
+    bottom: 0;
+    width: 9px;
+    height: 9px;
+    pointer-events: none;
+    opacity: 0.45;
+  }
+  .qa-resize-l { left: 0; border-left: 2px solid var(--text-muted); border-bottom: 2px solid var(--text-muted); }
+  .qa-resize-r { right: 0; border-right: 2px solid var(--text-muted); border-bottom: 2px solid var(--text-muted); }
+
+  /* ---------------- 右侧：复刻截图里的 Agent Chat ---------------- */
+  .agent-pane {
+    background: var(--background-primary);
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+  }
+  .agent-tabs {
+    height: 36px;
+    padding: 0 10px;
+    background: var(--background-secondary);
+    border-bottom: 1px solid var(--background-modifier-border);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: none;
+  }
+  .agent-tab {
+    height: 26px;
+    padding: 0 8px;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    color: var(--text-muted);
+    max-width: 132px;
+  }
+  .agent-tab.active {
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-weight: 500;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  }
+  .agent-tab span.t-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agent-tab-plus {
+    margin-left: auto;
+    color: var(--text-muted);
+    padding: 2px;
+    display: inline-flex;
+  }
+
+  .agent-messages {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 10px 10px 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .agent-assistant-msg {
+    padding: 4px 6px;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .agent-worked-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 8px;
+    color: var(--text-faint);
+    font-size: 11.5px;
+  }
+  .agent-user-msg {
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-modifier-hover);
+    border-radius: 6px;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    font-size: 13px;
+  }
+
+  /* 对照 ChatInput.tsx 504-510（含 Auto 模式红框！） */
+  .chat-input-shell {
+    margin: 4px 8px 8px;
+    border-radius: 6px;
+    border: 1px solid rgba(var(--color-red-rgb), 0.6);
+    box-shadow: 0 0 10px rgba(var(--color-red-rgb), 0.18);
+    padding: 8px 4px 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    background: var(--background-primary);
+    flex: none;
+  }
+  .badge-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 0 4px;
+  }
+  /* 对照 ContextBadgeWrapper.tsx + badge.tsx（与现有样式 100% 一致，无批注指示、点击无响应） */
+  .ctx-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px 3px 6px;
+    border-radius: 6px;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-primary-alt);
+    box-shadow: var(--badge-shadow);
+    font-size: 12px;
+    line-height: 1.25;
+    color: var(--text-normal);
+    max-width: 100%;
+    cursor: default;
+    user-select: none;
+  }
+  .ctx-badge .icon-slot {
+    position: relative;
+    width: 16px;
+    height: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    color: var(--text-muted);
+  }
+  .ctx-badge .rm-x {
+    display: none;
+    cursor: pointer;
+    color: var(--text-muted);
+  }
+  .ctx-badge:hover .icon-glyph { display: none; }
+  .ctx-badge:hover .rm-x { display: inline-flex; }
+  .ctx-badge .rm-x:hover { color: var(--text-normal); }
+  .ctx-badge .b-content {
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ctx-badge .b-faint {
+    font-size: 11.5px;
+    color: var(--text-faint);
+    flex: none;
+  }
+
+  .chat-editor-area {
+    width: 100%;
+    min-height: 44px;
+    max-height: 120px;
+    resize: none;
+    border: none;
+    background: transparent;
+    padding: 4px 8px;
+    color: var(--text-normal);
+    font: 13.5px/1.5 var(--font-ui);
+    outline: none;
+  }
+  .chat-editor-area::placeholder { color: var(--text-faint); }
+
+  .chat-input-foot {
+    display: flex;
+    height: 28px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 4px;
+    gap: 6px;
+  }
+  .chat-foot-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-muted);
+    min-width: 0;
+  }
+  .chat-foot-left .model-label {
+    color: var(--text-normal);
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .chat-foot-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: none;
+  }
+  .mode-auto {
+    font-size: 12px;
+    color: rgb(var(--color-red-rgb));
+    font-weight: 500;
+  }
+  .chat-send-circle {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: none;
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+  .chat-send-circle:hover:not(:disabled) { background: var(--interactive-accent-hover); }
+  .chat-send-circle:disabled { opacity: 0.4; cursor: default; }
+
+  details.xml-preview {
+    font-size: 11.5px;
+    color: var(--text-faint);
+  }
+  details.xml-preview summary { cursor: pointer; }
+  details.xml-preview pre {
+    margin: 6px 0 0;
+    padding: 8px;
+    border-radius: 6px;
+    background: #23211b;
+    color: #e2dccb;
+    font: 11px/1.45 var(--font-mono);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  #toast {
+    position: fixed;
+    left: 50%;
+    bottom: 16px;
+    transform: translateX(-50%);
+    background: #2b2922;
+    color: #f6f2e4;
+    padding: 6px 13px;
+    border-radius: 6px;
+    font-size: 12px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
+    z-index: 80;
+  }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<div class="proto-bar">
+  <span class="proto-title">
+    <span>Issue #3 弹窗雏形</span>
+    <span class="proto-pill">Quick Ask 风格</span>
+  </span>
+
+  <div class="seg" role="group" aria-label="弹窗模式对照">
+    <button id="view-anno" class="active">批注弹框（减法后）</button>
+    <button id="view-qa">原版 Quick Ask 对照</button>
+  </div>
+
+  <div class="seg" role="group" aria-label="Cancel / Done 按钮打磨方案">
+    <button id="btn-style-bordered" class="active">双键描边</button>
+    <button id="btn-style-ghost">轻量 Ghost</button>
+    <button id="btn-style-keycap">内嵌键帽</button>
+  </div>
+
+  <div class="seg" role="group" aria-label="配色">
+    <button id="th-parchment" class="active">暖米纸 (截图)</button>
+    <button id="th-light">Light</button>
+    <button id="th-dark">Dark</button>
+  </div>
+
+  <span class="spacer"></span>
+  <button class="proto-btn" id="reopen-demo">重新弹出示例框</button>
+  <button class="proto-btn" id="reset-demo">重置</button>
+</div>
+
+<div class="obsidian-shell">
+  <!-- 左：Obsidian 笔记编辑区 -->
+  <main class="markdown-leaf">
+    <div class="obsidian-tab-bar">
+      <div class="obsidian-tab">
+        <span id="tab-file-icon"></span>
+        <span>4.4 笔记</span>
+      </div>
+      <span class="focus-indicator in-note" id="focus-pill">焦点：笔记编辑器</span>
+      <span class="tab-bar-hint">划选任意行 → 选区旁出现「Add to Copilot | Annotate」</span>
+    </div>
+
+    <div class="cm-editor-host" id="cm-host">
+      <div class="cm-scroller" id="cm-scroller">
+        <div class="cm-sizer" id="cm-sizer">
+          <div class="note-h1">4.4 平衡与自发过程</div>
+          <div id="lines-container"></div>
+        </div>
+      </div>
+
+      <!-- 1:1 复刻 QuickAskOverlay 的挂载宿主 -->
+      <div class="copilot-quick-ask-overlay-root" id="overlay-root"></div>
+    </div>
+  </main>
+
+  <!-- 右：复刻截图里的 Agent Chat 侧栏 -->
+  <aside class="agent-pane">
+    <div class="agent-tabs">
+      <div class="agent-tab"><span id="tab-claude-1"></span><span class="t-label">设定笔记风格</span></div>
+      <div class="agent-tab active"><span id="tab-claude-2"></span><span class="t-label">查一下obsidian…</span></div>
+      <span class="agent-tab-plus" id="tab-plus"></span>
+    </div>
+
+    <div class="agent-messages" id="agent-messages"></div>
+
+    <div class="chat-input-shell">
+      <div class="badge-list" id="composer-badges"></div>
+      <textarea id="chat-input" class="chat-editor-area" rows="2" placeholder="Ask anything • @ to add context • / for commands"></textarea>
+      <div class="chat-input-foot">
+        <div class="chat-foot-left">
+          <span id="plus-icon"></span>
+          <span class="model-label">Default (recomm… · xhigh</span>
+          <span id="chev-1"></span>
+        </div>
+        <div class="chat-foot-right">
+          <span class="mode-auto">Auto</span>
+          <span id="chev-2"></span>
+          <button class="chat-send-circle" id="chat-send" disabled title="Send"></button>
+        </div>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<div id="toast"></div>
+
+<script>
+"use strict";
+
+const NOTE_PATH = "Notes/4.4 笔记.md";
+const NOTE_TITLE = "4.4 笔记";
+const MAX_PINNED = 10;
+
+const LINES = [
+  [222, "## 4.4.3 化学势判据与推导"],
+  [223, "在等温等压条件下，多组分系统的吉布斯函数判据可写为各组分化学势之和："],
+  [224, ""],
+  [225, "$$ \\Delta_r G_m = \\sum_B \\nu_B \\mu_B \\le 0 $$"],
+  [226, "其中 $\\nu_B$ 为化学计量数，反应物取负值，产物取正值。"],
+  [227, ""],
+  [228, "推导：由基本热力学方程 $dG = -S dT + V dp + \\sum_B \\mu_B dn_B$，"],
+  [229, "引入反应进度 $d\\xi = dn_B / \\nu_B$，即可消去各组分的物质的量变化。"],
+  [230, ""],
+  [231, "注意当过程不可逆时严格小于零，到达平衡态时取等号。"],
+  [232, ""],
+  [233, "**例**：在 $298\\text{ K}$、$100\\text{ kPa}$ 下，液态水蒸发为水蒸气，"],
+  [234, "比较两者化学势 $\\mu(\\text{g})$ 与 $\\mu(\\text{l})$ 即可判定相变方向。"],
+];
+
+const SVG = {
+  file: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><path d="M14 2v6h6"/></svg>',
+  textSelect: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3a2 2 0 0 0-2 2"/><path d="M19 3a2 2 0 0 1 2 2"/><path d="M21 19a2 2 0 0 1-2 2"/><path d="M5 21a2 2 0 0 1-2-2"/><path d="M9 3h1"/><path d="M14 3h1"/><path d="M9 21h1"/><path d="M14 21h1"/><path d="M3 9v1"/><path d="M21 9v1"/><path d="M3 14v1"/><path d="M21 14v1"/></svg>',
+  quote: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1z"/><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z"/></svg>',
+  annotate: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+  x16: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>',
+  x12: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>',
+  check: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+  cornerReturn: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 10 4 15 9 20"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/></svg>',
+  send: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>',
+  arrowUp: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>',
+  plus: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>',
+  chevDown: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>',
+  clear: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="m14.5 7.5-5 5"/><path d="m9.5 7.5 5 5"/></svg>',
+  spark: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v20M2 12h20M4.9 4.9l14.2 14.2M19.1 4.9 4.9 19.1"/></svg>',
+};
+
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+const $ = (s) => document.querySelector(s);
+const collapse = (s) => s.replace(/\s+/g, " ").trim();
+const contentFor = (s, e) => LINES.filter(([n]) => n >= s && n <= e).map(([, t]) => t).join("\n");
+const locLabel = (s, e) => (s === e ? `L${s}` : `L${s}-${e}`);
+
+let seq = 1;
+const uid = () => "ctx-" + seq++;
+
+let popupMode = "annotate"; // "annotate" | "quick-ask"
+let buttonStyle = "bordered"; // "bordered" | "ghost" | "keycap"
+let draggingSel = false;
+let anchorLine = null;
+let liveSel = null; // { start, end }
+let popupTarget = null; // { start, end, content, draft }
+let popupDragPos = null; // { left, top }
+let pinned = []; // [{ id, key, start, end, content, instruction }]
+let includeActiveNote = true;
+let chatDraft = "";
+let focusPlace = "note"; // "note" | "popup" | "chat"
+let sentMessages = [];
+
+function initDemo() {
+  seq = 1;
+  liveSel = null;
+  pinned = [
+    {
+      id: uid(),
+      key: `${NOTE_PATH}:228:228`,
+      start: 228,
+      end: 228,
+      content: contentFor(228, 228),
+      instruction: "",
+    },
+  ];
+  // 默认先打开一个定位在 L225-226 的批注弹框，方便第一眼看样式
+  popupTarget = {
+    start: 225,
+    end: 226,
+    content: contentFor(225, 226),
+    draft: "",
+  };
+  popupDragPos = null;
+  includeActiveNote = true;
+  chatDraft = "";
+  focusPlace = "popup";
+  sentMessages = [
+    {
+      id: uid(),
+      role: "assistant",
+      text: "若你其实指 ∧ 符号本身，直接把 `\\wedge` 包进 `\\bbox` 或 `\\color` 即可，例如 `\\bbox[#fff3b0,3px]{\\wedge}`。\n\n注意 `\\bbox` 是 MathJax 扩展，KaTeX 等渲染器不认，导出到别处可能失效；`\\color`、`\\boxed`、`\\underline` 兼容性更好。",
+    },
+  ];
+}
+
+let toastTimer = null;
+function toast(msg) {
+  const el = $("#toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 1900);
+}
+
+/* ---------------- 静态图标初始化 ---------------- */
+$("#tab-file-icon").innerHTML = SVG.file;
+$("#tab-claude-1").innerHTML = SVG.spark;
+$("#tab-claude-2").innerHTML = SVG.spark;
+$("#tab-plus").innerHTML = SVG.plus;
+$("#plus-icon").innerHTML = SVG.plus;
+$("#chev-1").innerHTML = SVG.chevDown;
+$("#chev-2").innerHTML = SVG.chevDown;
+$("#chat-send").innerHTML = SVG.arrowUp;
+
+/* ---------------- 焦点状态指示 ---------------- */
+function setFocusPlace(place) {
+  focusPlace = place;
+  const pill = $("#focus-pill");
+  if (place === "note") {
+    pill.textContent = "焦点：笔记编辑器（已归还）";
+    pill.className = "focus-indicator in-note";
+  } else if (place === "popup") {
+    pill.textContent = "焦点：批注弹框输入框";
+    pill.className = "focus-indicator";
+  } else {
+    pill.textContent = "焦点：Copilot Chat 输入框";
+    pill.className = "focus-indicator";
+  }
+}
+
+/* ---------------- 左侧笔记渲染（无额外持久行高亮） ---------------- */
+function renderLines() {
+  const container = $("#lines-container");
+  container.innerHTML = "";
+  const activeRange = popupTarget
+    ? { start: popupTarget.start, end: popupTarget.end }
+    : liveSel;
+
+  for (const [n, text] of LINES) {
+    const row = document.createElement("div");
+    row.className = "cm-line";
+    if (text.startsWith("##")) row.classList.add("is-heading");
+    // 仅当前正在划选或当前打开弹框锚定的那几行有 SelectionHighlight，不保留 pinned 持久高亮
+    if (activeRange && n >= activeRange.start && n <= activeRange.end) {
+      row.classList.add("copilot-selection-highlight");
+    }
+    row.dataset.line = String(n);
+
+    const gutter = document.createElement("span");
+    gutter.className = "cm-gutter";
+    gutter.textContent = String(n);
+
+    const content = document.createElement("span");
+    content.className = "cm-content";
+    content.textContent = text || " ";
+
+    row.appendChild(gutter);
+    row.appendChild(content);
+    container.appendChild(row);
+  }
+}
+
+/* ---------------- Selection Toolbar 双按钮 ---------------- */
+function renderToolbar() {
+  const old = $("#sel-toolbar");
+  if (old) old.remove();
+  if (!liveSel || draggingSel || popupTarget) return;
+
+  const lastRow = document.querySelector(`.cm-line[data-line="${liveSel.end}"]`);
+  if (!lastRow) return;
+  const hostRect = $("#cm-host").getBoundingClientRect();
+  const rowRect = lastRow.getBoundingClientRect();
+
+  const tb = document.createElement("div");
+  tb.className = "selection-toolbar";
+  tb.id = "sel-toolbar";
+  tb.innerHTML =
+    `<button type="button" data-act="quote">${SVG.quote}<span>Add to Copilot</span></button>` +
+    `<span class="tb-sep"></span>` +
+    `<button type="button" class="is-annotate" data-act="annotate">${SVG.annotate}<span>Annotate</span></button>`;
+
+  tb.addEventListener("mousedown", (e) => e.stopPropagation());
+  $("#cm-host").appendChild(tb);
+
+  const top = Math.max(8, rowRect.bottom - hostRect.top + 6);
+  const left = Math.max(12, Math.min(rowRect.left - hostRect.left + 44, hostRect.width - tb.offsetWidth - 14));
+  tb.style.top = top + "px";
+  tb.style.left = left + "px";
+
+  tb.querySelector('[data-act="quote"]').addEventListener("click", () => {
+    const start = liveSel.start;
+    const end = liveSel.end;
+    const key = `${NOTE_PATH}:${start}:${end}`;
+    liveSel = null;
+    anchorLine = null;
+    pinExcerpt(key, start, end, contentFor(start, end), "");
+    setFocusPlace("note");
+    renderAll();
+    toast("已静默固定为引用徽章");
+  });
+
+  tb.querySelector('[data-act="annotate"]').addEventListener("click", () => {
+    const start = liveSel.start;
+    const end = liveSel.end;
+    const existing = pinned.find((p) => p.key === `${NOTE_PATH}:${start}:${end}`);
+    liveSel = null;
+    anchorLine = null;
+    popupMode = "annotate";
+    $("#view-anno").classList.add("active");
+    $("#view-qa").classList.remove("active");
+    popupDragPos = null;
+    popupTarget = {
+      start,
+      end,
+      content: contentFor(start, end),
+      draft: existing?.instruction ?? "",
+    };
+    setFocusPlace("popup");
+    renderAll();
+  });
+}
+
+/* ---------------- 1:1 QuickAskOverlay 弹出与样式 ---------------- */
+function renderPopupOverlay() {
+  const root = $("#overlay-root");
+  root.innerHTML = "";
+  if (!popupTarget) return;
+
+  const hostRect = $("#cm-host").getBoundingClientRect();
+  const sizerRect = $("#cm-sizer").getBoundingClientRect();
+  const topRow = document.querySelector(`.cm-line[data-line="${popupTarget.start}"]`);
+  const bottomRow = document.querySelector(`.cm-line[data-line="${popupTarget.end}"]`);
+  if (!topRow || !bottomRow) return;
+
+  const topRect = topRow.getBoundingClientRect();
+  const bottomRect = bottomRow.getBoundingClientRect();
+
+  // 对照 QuickAskOverlay.tsx: PANEL_DEFAULT_WIDTH = 420, PANEL_MARGIN = 12, PANEL_OFFSET_Y = 6
+  const width = Math.min(420, hostRect.width - 24);
+  const overlay = document.createElement("div");
+  overlay.className = "copilot-quick-ask-overlay";
+  overlay.style.width = width + "px";
+
+  if (popupMode === "annotate") {
+    const hasText = popupTarget.draft.trim().length > 0;
+    const cancelClass = buttonStyle === "ghost"
+      ? "qa-action-btn qa-btn-cancel-ghost"
+      : "qa-action-btn qa-btn-cancel-bordered";
+    const cancelHtml = buttonStyle === "keycap"
+      ? `<button type="button" class="${cancelClass}" id="anno-cancel" title="Cancel (Esc)"><span>Cancel</span><span class="qa-keycap">Esc</span></button>`
+      : `<button type="button" class="${cancelClass}" id="anno-cancel" title="Cancel (Esc)">Cancel</button>`;
+    const doneHtml = buttonStyle === "keycap"
+      ? `<button type="button" class="qa-action-btn qa-btn-done" id="anno-done" ${hasText ? "" : "disabled"} title="Add instruction (Enter)"><span>Done</span><span class="qa-keycap">↵</span></button>`
+      : `<button type="button" class="qa-action-btn qa-btn-done" id="anno-done" ${hasText ? "" : "disabled"} title="Add instruction (Enter)">${SVG.cornerReturn}<span>Done</span></button>`;
+
+    overlay.innerHTML = `
+      <div class="quick-ask-panel">
+        <div class="qa-top-bar">
+          <div class="qa-drag-handle" id="qa-drag"><div class="qa-drag-pill"></div></div>
+          <button type="button" class="qa-close-btn" id="qa-close" title="Close">${SVG.x16}</button>
+        </div>
+
+        <div class="qa-input-outer">
+          <div class="qa-input-box">
+            <textarea
+              id="anno-input"
+              class="qa-content-editable"
+              rows="2"
+              aria-label="Annotation instruction input"
+              placeholder="Add an instruction..."
+            >${esc(popupTarget.draft)}</textarea>
+          </div>
+        </div>
+
+        <div class="qa-footer">
+          <div class="qa-footer-left">
+            <span class="qa-anchor-hint">
+              <span class="qa-anchor-loc">${esc(locLabel(popupTarget.start, popupTarget.end))}</span>
+            </span>
+          </div>
+          <div class="qa-footer-right">
+            ${cancelHtml}
+            ${doneHtml}
+          </div>
+        </div>
+      </div>
+    `;
+  } else {
+    // 原版 Quick Ask 完整对照（含消息流、ModelSelector、Note checkbox、Clear、Send）
+    overlay.innerHTML = `
+      <div class="quick-ask-panel qa-orig">
+        <div class="qa-top-bar">
+          <div class="qa-drag-handle" id="qa-drag"><div class="qa-drag-pill"></div></div>
+          <button type="button" class="qa-close-btn" id="qa-close" title="Close">${SVG.x16}</button>
+        </div>
+
+        <div class="qa-orig-messages">
+          <div class="qa-orig-user">解释一下这个化学势判据</div>
+          <div class="qa-orig-ai">等温等压下 $\\Delta_r G_m = \\sum_B \\nu_B \\mu_B$，小于 0 时反应自发。</div>
+        </div>
+
+        <div class="qa-input-outer">
+          <div class="qa-input-box">
+            <textarea class="qa-content-editable" id="anno-input" rows="2" placeholder="Ask a question... ">${esc(popupTarget.draft)}</textarea>
+          </div>
+        </div>
+
+        <div class="qa-footer">
+          <div class="qa-footer-left">
+            <button type="button" class="qa-ghost-select">Claude Sonnet ${SVG.chevDown}</button>
+            <label class="qa-checkbox-wrap"><input type="checkbox" checked /><span>Note</span></label>
+          </div>
+          <div class="qa-footer-right">
+            <button type="button" class="qa-action-btn qa-btn-cancel-ghost" style="width:28px;padding:0" title="Clear conversation">${SVG.clear}</button>
+            <button type="button" class="qa-btn-primary-icon" title="Send message">${SVG.send}</button>
+          </div>
+        </div>
+
+        <div class="qa-resize-l"></div>
+        <div class="qa-resize-r"></div>
+      </div>
+    `;
+  }
+
+  root.appendChild(overlay);
+
+  // 复刻 QuickAskOverlay.tsx 的水平与上下翻转定位算法
+  if (popupDragPos) {
+    overlay.style.left = popupDragPos.left + "px";
+    overlay.style.top = popupDragPos.top + "px";
+  } else {
+    const panelH = overlay.offsetHeight || 120;
+    const isMultiLine = Math.abs(topRect.top - bottomRect.top) > 6;
+    const contentLeft = Math.max(12, sizerRect.left - hostRect.left);
+    const contentWidth = Math.min(sizerRect.width, hostRect.width - 24);
+    let left = isMultiLine
+      ? contentLeft + (contentWidth - width) / 2
+      : topRect.left - hostRect.left + 40;
+    left = Math.max(12, Math.min(left, hostRect.width - width - 12));
+
+    const spaceBelow = hostRect.bottom - bottomRect.bottom - 12;
+    const spaceAbove = topRect.top - hostRect.top - 12;
+    let top;
+    if (spaceBelow >= panelH + 6) {
+      top = bottomRect.bottom - hostRect.top + 6;
+    } else if (spaceAbove >= panelH + 6) {
+      top = topRect.top - hostRect.top - 6 - panelH;
+    } else {
+      top = Math.max(12, hostRect.height - panelH - 12);
+    }
+    overlay.style.left = Math.round(left) + "px";
+    overlay.style.top = Math.round(top) + "px";
+  }
+
+  bindPopupEvents(overlay);
+}
+
+function bindPopupEvents(overlay) {
+  overlay.addEventListener("mousedown", (e) => e.stopPropagation());
+  overlay.addEventListener("click", (e) => e.stopPropagation());
+
+  // 拖拽移动（复刻 useDraggable）
+  const dragEl = overlay.querySelector("#qa-drag");
+  dragEl?.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    const hostRect = $("#cm-host").getBoundingClientRect();
+    const rect = overlay.getBoundingClientRect();
+    const sx = e.clientX;
+    const sy = e.clientY;
+    const baseL = rect.left - hostRect.left;
+    const baseT = rect.top - hostRect.top;
+    const move = (ev) => {
+      const l = Math.max(8, Math.min(baseL + (ev.clientX - sx), hostRect.width - overlay.offsetWidth - 8));
+      const t = Math.max(8, Math.min(baseT + (ev.clientY - sy), hostRect.height - overlay.offsetHeight - 8));
+      popupDragPos = { left: l, top: t };
+      overlay.style.left = l + "px";
+      overlay.style.top = t + "px";
+    };
+    const up = () => {
+      document.removeEventListener("mousemove", move);
+      document.removeEventListener("mouseup", up);
+    };
+    document.addEventListener("mousemove", move);
+    document.addEventListener("mouseup", up);
+  });
+
+  const closeCancel = () => {
+    popupTarget = null;
+    popupDragPos = null;
+    setFocusPlace("note");
+    renderAll();
+  };
+
+  overlay.querySelector("#qa-close")?.addEventListener("click", closeCancel);
+  overlay.querySelector("#anno-cancel")?.addEventListener("click", closeCancel);
+
+  const ta = overlay.querySelector("#anno-input");
+  if (ta) {
+    ta.focus();
+    ta.setSelectionRange(ta.value.length, ta.value.length);
+
+    // 复刻 QuickAskInput 自动随文本增高（min-h-12 到 max-h-48）
+    const autoHeight = () => {
+      ta.style.height = "auto";
+      ta.style.height = Math.min(192, Math.max(48, ta.scrollHeight)) + "px";
+    };
+    autoHeight();
+
+    ta.addEventListener("input", () => {
+      if (!popupTarget) return;
+      popupTarget.draft = ta.value;
+      autoHeight();
+      const doneBtn = overlay.querySelector("#anno-done");
+      if (doneBtn) doneBtn.disabled = !ta.value.trim();
+    });
+
+    ta.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        closeCancel();
+        return;
+      }
+      if (popupMode === "annotate" && e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        commitAnnotation();
+      }
+    });
+  }
+
+  overlay.querySelector("#anno-done")?.addEventListener("click", commitAnnotation);
+}
+
+function commitAnnotation() {
+  if (!popupTarget) return;
+  const text = popupTarget.draft.trim();
+  if (!text) return;
+
+  const { start, end, content } = popupTarget;
+  const key = `${NOTE_PATH}:${start}:${end}`;
+  const ok = pinExcerpt(key, start, end, content, text);
+  if (!ok) return;
+
+  popupTarget = null;
+  popupDragPos = null;
+  setFocusPlace("note");
+  renderAll();
+  toast("已添加到输入框（焦点留在笔记）");
+}
+
+function pinExcerpt(key, start, end, content, instruction) {
+  const existing = pinned.find((p) => p.key === key);
+  if (existing) {
+    // 同一选区再点批注并完成时，用新指令覆盖更新
+    if (instruction) existing.instruction = instruction;
+    return true;
+  }
+  if (pinned.length >= MAX_PINNED) {
+    toast(`You can attach up to ${MAX_PINNED} selections.`);
+    return false;
+  }
+  pinned.push({ id: uid(), key, start, end, content, instruction });
+  return true;
+}
+
+/* ---------------- 右侧 Agent Chat 渲染 ---------------- */
+function buildIssue3Xml(excerpts, userText) {
+  const units = excerpts.map((e, i) => {
+    const id = i + 1;
+    let out = `<excerpt id="${id}" path="${NOTE_PATH}" lines="${e.start}-${e.end}">\n${e.content}\n</excerpt>`;
+    if (e.instruction) {
+      out += `\n<instruction id="${id}">${e.instruction}</instruction>`;
+    }
+    return out;
+  });
+  const parts = [];
+  if (units.length) parts.push(`<copilot-context>\n${units.join("\n\n")}\n</copilot-context>`);
+  if (userText) parts.push(`<user-message>\n${userText}\n</user-message>`);
+  return parts.join("\n\n");
+}
+
+function renderBadges() {
+  const row = $("#composer-badges");
+  row.innerHTML = "";
+
+  if (includeActiveNote) {
+    const b = document.createElement("div");
+    b.className = "ctx-badge";
+    b.title = NOTE_PATH;
+    b.innerHTML =
+      `<span class="icon-slot"><span class="icon-glyph">${SVG.file}</span><span class="rm-x" title="Remove">${SVG.x12}</span></span>` +
+      `<span class="b-content">${esc(NOTE_TITLE)}</span>` +
+      `<span class="b-faint">Current</span>`;
+    b.querySelector(".rm-x").addEventListener("click", (e) => {
+      e.stopPropagation();
+      includeActiveNote = false;
+      renderBadges();
+    });
+    row.appendChild(b);
+  }
+
+  // 徽章样式与 tooltip 保持现有完全一致：无批注图标、无批注预览、点击无响应
+  for (const item of pinned) {
+    const loc = locLabel(item.start, item.end);
+    const b = document.createElement("div");
+    b.className = "ctx-badge";
+    b.title = `${item.content}\n${NOTE_PATH} (${loc})`;
+    b.innerHTML =
+      `<span class="icon-slot"><span class="icon-glyph">${SVG.textSelect}</span><span class="rm-x" title="Remove">${SVG.x12}</span></span>` +
+      `<span class="b-content">${esc(collapse(item.content))}</span>` +
+      `<span class="b-faint">${esc(loc)}</span>`;
+    b.querySelector(".rm-x").addEventListener("click", (e) => {
+      e.stopPropagation();
+      pinned = pinned.filter((x) => x.id !== item.id);
+      renderBadges();
+      updateSend();
+    });
+    row.appendChild(b);
+  }
+}
+
+function renderAgentMessages() {
+  const list = $("#agent-messages");
+  list.innerHTML = "";
+  for (const m of sentMessages) {
+    if (m.role === "assistant") {
+      const div = document.createElement("div");
+      div.className = "agent-assistant-msg";
+      div.innerHTML =
+        `<div>${esc(m.text).replace(/\n/g, "<br>")}</div>` +
+        `<div class="agent-worked-row"><span>Worked for 39s</span><span></span></div>`;
+      list.appendChild(div);
+    } else {
+      const div = document.createElement("div");
+      div.className = "agent-user-msg";
+      let badges = '<div class="badge-list">';
+      for (const e of m.excerpts) {
+        const loc = locLabel(e.start, e.end);
+        badges += `<div class="ctx-badge" title="${esc(e.content + "\n" + NOTE_PATH + " (" + loc + ")")}"><span class="icon-slot">${SVG.textSelect}</span><span class="b-content">${esc(collapse(e.content))}</span><span class="b-faint">${esc(loc)}</span></div>`;
+      }
+      badges += "</div>";
+      div.innerHTML =
+        (m.excerpts.length ? badges : "") +
+        (m.text ? `<div>${esc(m.text)}</div>` : "") +
+        `<details class="xml-preview"><summary>底层发送内容（仅演示可见）</summary><pre>${esc(buildIssue3Xml(m.excerpts, m.text))}</pre></details>`;
+      list.appendChild(div);
+    }
+  }
+  list.scrollTop = list.scrollHeight;
+}
+
+function canSend() {
+  if (chatDraft.trim().length > 0) return true;
+  return pinned.some((p) => p.instruction.trim().length > 0);
+}
+
+function updateSend() {
+  $("#chat-send").disabled = !canSend();
+}
+
+function sendChat() {
+  if (!canSend()) return;
+  const excerpts = pinned.map((p) => ({ ...p }));
+  const text = chatDraft.trim();
+  const instCount = excerpts.filter((e) => e.instruction).length;
+  sentMessages.push({ id: uid(), role: "user", excerpts, text });
+  sentMessages.push({
+    id: uid(),
+    role: "assistant",
+    text: `收到 ${excerpts.length} 处引用${instCount ? `（其中 ${instCount} 处附带 instruction）` : ""}。`,
+  });
+  pinned = [];
+  chatDraft = "";
+  $("#chat-input").value = "";
+  renderAll();
+}
+
+/* ---------------- 事件绑定 ---------------- */
+const scroller = $("#cm-scroller");
+
+scroller.addEventListener("mousedown", (e) => {
+  const row = e.target.closest(".cm-line");
+  setFocusPlace("note");
+  if (popupTarget) {
+    popupTarget = null;
+    popupDragPos = null;
+  }
+  if (!row) {
+    liveSel = null;
+    anchorLine = null;
+    renderAll();
+    return;
+  }
+  e.preventDefault();
+  draggingSel = true;
+  const n = Number(row.dataset.line);
+  anchorLine = n;
+  liveSel = { start: n, end: n };
+  renderLines();
+  renderToolbar();
+  renderPopupOverlay();
+});
+
+scroller.addEventListener("mouseover", (e) => {
+  if (!draggingSel) return;
+  const row = e.target.closest(".cm-line");
+  if (!row) return;
+  const n = Number(row.dataset.line);
+  const s = Math.min(anchorLine, n);
+  const end = Math.max(anchorLine, n);
+  if (liveSel && liveSel.start === s && liveSel.end === end) return;
+  liveSel = { start: s, end };
+  renderLines();
+});
+
+document.addEventListener("mouseup", () => {
+  if (!draggingSel) return;
+  draggingSel = false;
+  renderToolbar();
+});
+
+scroller.addEventListener("scroll", () => {
+  if (!popupDragPos) renderPopupOverlay();
+  renderToolbar();
+});
+
+$("#chat-input").addEventListener("focus", () => setFocusPlace("chat"));
+$("#chat-input").addEventListener("input", (e) => {
+  chatDraft = e.target.value;
+  updateSend();
+});
+$("#chat-input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    sendChat();
+  }
+});
+$("#chat-send").addEventListener("click", sendChat);
+
+$("#view-anno").addEventListener("click", () => {
+  popupMode = "annotate";
+  popupDragPos = null;
+  if (!popupTarget) popupTarget = { start: 225, end: 226, content: contentFor(225, 226), draft: "" };
+  $("#view-anno").classList.add("active");
+  $("#view-qa").classList.remove("active");
+  renderAll();
+});
+
+$("#view-qa").addEventListener("click", () => {
+  popupMode = "quick-ask";
+  popupDragPos = null;
+  if (!popupTarget) popupTarget = { start: 225, end: 226, content: contentFor(225, 226), draft: "" };
+  $("#view-qa").classList.add("active");
+  $("#view-anno").classList.remove("active");
+  renderAll();
+});
+
+function setButtonStyle(style) {
+  buttonStyle = style;
+  $("#btn-style-bordered").classList.toggle("active", style === "bordered");
+  $("#btn-style-ghost").classList.toggle("active", style === "ghost");
+  $("#btn-style-keycap").classList.toggle("active", style === "keycap");
+  renderPopupOverlay();
+}
+$("#btn-style-bordered").addEventListener("click", () => setButtonStyle("bordered"));
+$("#btn-style-ghost").addEventListener("click", () => setButtonStyle("ghost"));
+$("#btn-style-keycap").addEventListener("click", () => setButtonStyle("keycap"));
+
+function setTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  $("#th-parchment").classList.toggle("active", theme === "parchment");
+  $("#th-light").classList.toggle("active", theme === "light");
+  $("#th-dark").classList.toggle("active", theme === "dark");
+}
+$("#th-parchment").addEventListener("click", () => setTheme("parchment"));
+$("#th-light").addEventListener("click", () => setTheme("light"));
+$("#th-dark").addEventListener("click", () => setTheme("dark"));
+
+$("#reopen-demo").addEventListener("click", () => {
+  popupMode = "annotate";
+  $("#view-anno").classList.add("active");
+  $("#view-qa").classList.remove("active");
+  popupDragPos = null;
+  popupTarget = { start: 225, end: 226, content: contentFor(225, 226), draft: "" };
+  setFocusPlace("popup");
+  renderAll();
+});
+
+$("#reset-demo").addEventListener("click", () => {
+  popupMode = "annotate";
+  $("#view-anno").classList.add("active");
+  $("#view-qa").classList.remove("active");
+  initDemo();
+  $("#chat-input").value = "";
+  renderAll();
+  toast("已重置演示");
+});
+
+function renderAll() {
+  renderLines();
+  renderToolbar();
+  renderPopupOverlay();
+  renderBadges();
+  renderAgentMessages();
+  updateSend();
+}
+
+initDemo();
+renderAll();
+</script>
+</body>
+</html>

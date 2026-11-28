@@ -1,0 +1,1068 @@
+<!DOCTYPE html>
+<!--
+  PROTOTYPE —— 「引用内容批注 · 一次性发送多条」雏形 v6。一次性代码，验证完即删，无持久化。
+  v6 = UI 打磨（统一 SVG 图标、间距/圆角/阴影体系、文案），交互与 v5 相同。
+
+  交互链路（对齐真实实现）：
+    用户在笔记里划选（拖选/点选行）→ 选区旁浮出「引用」按钮（复刻 Selection Toolbar 的
+    「Add to Copilot」，selectionToolbarIntegration.ts）→ 点击固定为徽章（pinSelection，去重、上限 10），
+    批注弹框原地出现在引用处（锚在选中段落旁，像页边批注）
+    → 输入框上方出现引用徽章（ContextSelectedTextBadge：内容截断 + 淡色行号；hover 图标换 ×），有批注带绿笔标
+    → 点徽章 → 笔记滚回引用处重新展开弹框补写/查看
+    → Ctrl+Enter 打开提交确认（GitHub Submit review 式：pending 摘要可增删、带总结语）→ 提交 → agent 追问 → 应用到笔记（行变绿挂 ✓）闭环。
+    待批注徽章带灰色「待批注」标（pending 可见性，GitHub 式）。
+
+  与真实实现的对应：
+    - 选区浮动按钮 = Selection Toolbar 注册的 "Add to Copilot" action（quote 图标）。
+    - 选区未固定时以 live 徽章虚线显示在输入框上方（reportSelection 的 live 上下文）。
+    - 徽章 tooltip = 完整内容 + notePath (L 行号)；消息顶部复用同一套徽章行（MessageContext）。
+    - 增量：点选区徽章 → 批注面板 ≈ 给 SelectedTextContext 挂 comment 随消息发送。
+
+  原型里划选为行粒度（真实实现是字符级，交互同型）。双击即开，纯内存，无依赖。
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>原型 · 划选引用写批注</title>
+<style>
+  :root {
+    --paper: #f1ede3;
+    --surface: #fdfbf6;
+    --surface-2: #f5f2e9;
+    --ink: #33312b;
+    --muted: #7d7768;
+    --faint: #a9a294;
+    --line: #e3ddcd;
+    --line-strong: #cfc7b4;
+    --green: #3e7a5a;
+    --green-tint: #e9f1ea;
+    --green-line: #b7d2c0;
+    --amber: #f1e5bd;
+    --danger: #a8503c;
+    --blue: #33707e;
+    --float-shadow: 0 3px 10px rgba(58, 52, 38, .10), 0 10px 28px rgba(58, 52, 38, .14);
+    --pop-shadow: 0 2px 6px rgba(58, 52, 38, .08), 0 14px 36px rgba(58, 52, 38, .16);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font: 13.5px/1.65 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  }
+  svg { display: inline-block; vertical-align: -.15em; }
+  :focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; border-radius: 4px; }
+
+  /* ---------- 顶栏 ---------- */
+  header {
+    display: flex; align-items: baseline; gap: 12px;
+    padding: 12px 18px;
+  }
+  header h1 { font-size: 14px; font-weight: 600; margin: 0; letter-spacing: .01em; }
+  header .proto-tag {
+    font-size: 11px; color: var(--danger);
+    border: 1px solid currentColor; border-radius: 5px;
+    padding: 0 6px; line-height: 1.6; align-self: center;
+  }
+  header .flow { color: var(--muted); font-size: 12px; }
+  header .spacer { flex: 1; }
+  header button {
+    border: 1px solid var(--line); background: var(--surface); color: var(--muted);
+    border-radius: 6px; padding: 3px 12px; cursor: pointer; font-size: 12.5px;
+  }
+  header button:hover { color: var(--ink); border-color: var(--line-strong); }
+
+  main {
+    display: grid; grid-template-columns: minmax(330px, 44%) 1fr;
+    gap: 12px; padding: 0 18px 18px; height: calc(100vh - 49px);
+  }
+
+  /* ---------- 左：笔记（舞台） ---------- */
+  .note-pane {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .note-head {
+    padding: 10px 14px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .note-title { font-weight: 600; font-size: 13px; }
+  .note-body {
+    overflow: auto; padding: 12px 10px 48px; flex: 1; scroll-behavior: smooth;
+    position: relative; user-select: none; -webkit-user-select: none;
+  }
+  .nl {
+    display: flex; padding: 2.5px 10px; border-radius: 6px; cursor: text;
+    transition: background .1s;
+  }
+  .nl:hover { background: var(--surface-2); }
+  .nl.sel { background: var(--green-tint); box-shadow: inset 2px 0 0 var(--green-line); }
+  .nl.applied { background: var(--green-tint); box-shadow: inset 3px 0 0 var(--green); }
+  .nl.flash { animation: flash 1.1s ease-out 1; }
+  @keyframes flash {
+    0% { background: var(--amber); }
+    100% { background: transparent; }
+  }
+  .nl .ln {
+    width: 34px; flex: none; text-align: right; margin-right: 14px;
+    color: var(--faint); font: 11px/1.95 ui-monospace, monospace; user-select: none;
+  }
+  .nl.applied .ln { color: var(--green); font-weight: 700; }
+  .nl .lt { white-space: pre-wrap; word-break: break-all; font-size: 13.5px; }
+  .note-tip {
+    padding: 8px 14px; border-top: 1px solid var(--line);
+    font-size: 11.5px; color: var(--faint);
+  }
+
+  /* 浮动引用按钮（复刻 Selection Toolbar 的 Add to Copilot） */
+  .quote-fab {
+    position: absolute; z-index: 10;
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--surface); color: var(--green); border: 1px solid var(--green-line);
+    border-radius: 8px; font-size: 12.5px; font-weight: 600; padding: 5px 12px; cursor: pointer;
+    box-shadow: var(--float-shadow);
+    animation: rise .12s ease-out;
+  }
+  .quote-fab:hover { background: var(--green-tint); }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(3px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ---------- 右：聊天 ---------- */
+  .chat-pane { display: flex; flex-direction: column; min-width: 0; }
+  #chat {
+    flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 10px;
+    padding: 2px 4px 12px;
+  }
+  .msg { max-width: 90%; border-radius: 12px; padding: 10px 14px; }
+  .msg.user { align-self: flex-end; background: var(--surface); border: 1px solid var(--line); }
+  .msg.ai { align-self: flex-start; background: var(--surface-2); border: 1px solid transparent; }
+  .msg.hint {
+    align-self: center; max-width: 100%; background: transparent; border: 1px dashed var(--line-strong);
+    color: var(--muted); font-size: 12px; border-radius: 10px;
+  }
+  .msg.ai .files {
+    margin-top: 8px; font-size: 12px; color: var(--muted);
+    display: flex; align-items: center; gap: 5px;
+  }
+  .msg.ai .files svg { color: var(--green); }
+  .msg-actions { display: flex; gap: 8px; margin-top: 10px; }
+  .msg-actions button {
+    border: 1px solid var(--green-line); background: var(--green-tint); color: var(--green);
+    border-radius: 6px; padding: 3px 12px; cursor: pointer; font-size: 12.5px;
+  }
+  .msg-actions button:hover { background: var(--green); border-color: var(--green); color: #fff; }
+  .msg-actions button.ghost { background: transparent; color: var(--muted); border-color: var(--line); }
+  .msg-actions button.ghost:hover { background: transparent; color: var(--ink); border-color: var(--line-strong); }
+  details.payload { margin-top: 8px; font-size: 12px; }
+  details.payload summary { color: var(--faint); cursor: pointer; }
+  details.payload summary:hover { color: var(--muted); }
+  details.payload pre {
+    background: #33302a; color: #d8d3c8; padding: 8px 10px; border-radius: 8px;
+    overflow: auto; font-size: 11.5px; max-height: 220px;
+  }
+
+  /* 徽章：复刻 Badge + ContextBadgeWrapper（图标 hover 换 ×） */
+  .badge-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .badge-row:empty { display: none; }
+  .qbadge {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: var(--surface); border: 1px solid var(--line-strong); border-radius: 8px;
+    font-size: 12px; padding: 2.5px 8px 2.5px 5px; line-height: 1.6;
+    max-width: 100%; min-width: 0;
+  }
+  .qbadge .icon, .qbadge .rm {
+    flex: none; display: inline-flex; align-items: center; color: var(--muted);
+  }
+  .qbadge .rm { display: none; cursor: pointer; padding: 1px; border-radius: 4px; }
+  .qbadge:hover .icon { display: none; }
+  .qbadge:hover .rm { display: inline-flex; }
+  .qbadge .rm:hover { color: var(--danger); background: var(--paper); }
+  .qbadge .body { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .qbadge .rng, .qbadge .cur { flex: none; color: var(--faint); font: 11px ui-monospace, monospace; }
+  .qbadge .mark { flex: none; display: inline-flex; color: var(--green); }
+  .qbadge .wait { flex: none; color: var(--faint); font-size: 11px; }
+  .qbadge.live {
+    border-style: dashed; border-color: var(--green-line);
+    background: var(--green-tint); cursor: pointer;
+  }
+  .qbadge.live .tip { flex: none; color: var(--green); font-size: 11px; }
+  .qbadge.note-badge .name { font-weight: 600; }
+  .qbadge.anno-open { border-color: var(--green); background: var(--green-tint); }
+
+  /* 批注弹框：出现在引用处（锚在选中段落旁） */
+  .anno-pop {
+    position: absolute; z-index: 10; width: 300px; max-width: calc(100% - 20px);
+    background: var(--surface); border: 1px solid var(--green-line); border-radius: 10px;
+    padding: 9px 11px; box-shadow: var(--pop-shadow);
+    animation: rise .12s ease-out;
+  }
+  .pop-head { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
+  .pop-head .title {
+    font-size: 11.5px; color: var(--muted);
+    font: 11px ui-monospace, monospace;
+  }
+  .pop-head .tbtns { margin-left: auto; display: flex; gap: 2px; }
+  .tbtn {
+    border: none; background: none; color: var(--muted); cursor: pointer;
+    padding: 2px 5px; border-radius: 5px; line-height: 1; display: inline-flex;
+  }
+  .tbtn:hover { background: var(--paper); color: var(--danger); }
+  .anno-pop textarea {
+    width: 100%; border: 1px solid var(--line); border-radius: 6px; background: #fff;
+    font: inherit; color: var(--ink); padding: 6px 10px; resize: vertical;
+  }
+  .anno-pop textarea::placeholder { color: var(--faint); }
+  .anno-pop textarea:focus { border-color: var(--green-line); outline: none; }
+  .pop-foot { display: flex; align-items: center; gap: 8px; margin-top: 7px; }
+  .pop-foot .esc-hint { flex: 1; font-size: 11px; color: var(--faint); }
+  .pop-foot button {
+    border: 1px solid var(--green-line); background: var(--green-tint); color: var(--green);
+    border-radius: 6px; padding: 2.5px 12px; cursor: pointer; font-size: 12px;
+  }
+  .pop-foot button:hover { background: var(--green); border-color: var(--green); color: #fff; }
+
+  /* ---------- 输入器（复刻截图版式） ---------- */
+  #composer { margin-top: 10px; }
+  .composer {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+    padding: 9px 12px 9px;
+  }
+  .composer .input-line input {
+    width: 100%; border: none; background: transparent; outline: none;
+    color: var(--ink); font: inherit; padding: 8px 2px 4px;
+  }
+  .composer .input-line input::placeholder { color: var(--faint); }
+  .composer .foot { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+  .composer .foot .plus {
+    color: var(--muted); cursor: pointer; padding: 3px; border-radius: 5px;
+    display: inline-flex;
+  }
+  .composer .foot .plus:hover { color: var(--ink); background: var(--paper); }
+  .composer .foot .model { color: var(--ink); font-size: 12.5px; }
+  .composer .foot .auto { color: var(--danger); font-size: 12.5px; }
+  .composer .foot .chev { color: var(--faint); font-size: 10px; }
+  .composer .foot .spacer { flex: 1; }
+  .send {
+    width: 32px; height: 32px; border: none; border-radius: 50%;
+    background: var(--green); color: #fff; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .send:hover { background: #356a4d; }
+  .send:disabled { background: var(--paper); color: var(--faint); cursor: default; }
+  .kbd-hint { font-size: 11px; color: var(--faint); }
+
+  /* 提交确认（GitHub Submit review 式） */
+  .confirm-backdrop {
+    position: fixed; inset: 0; background: rgba(51, 48, 43, .38); z-index: 40;
+    display: flex; align-items: center; justify-content: center; padding: 20px;
+  }
+  .confirm {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+    width: min(540px, 100%); max-height: 80vh; display: flex; flex-direction: column;
+    box-shadow: var(--pop-shadow);
+  }
+  .confirm .head {
+    padding: 12px 16px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: baseline; gap: 8px; font-weight: 600;
+  }
+  .confirm .head .pending-tag { color: var(--muted); font-size: 12px; font-weight: 400; }
+  .confirm .list { overflow: auto; padding: 2px 16px; }
+  .confirm .row {
+    display: flex; gap: 10px; align-items: flex-start;
+    padding: 10px 0; border-top: 1px solid var(--line); font-size: 13px;
+  }
+  .confirm .row:first-child { border-top: none; }
+  .confirm .row .lines {
+    flex: none; color: var(--green); padding-top: 3px;
+    font: 11px ui-monospace, monospace;
+  }
+  .confirm .row .what { flex: 1; min-width: 0; cursor: pointer; }
+  .confirm .row .what:hover .cmt { color: var(--blue); }
+  .confirm .row .q {
+    color: var(--muted); font-size: 12px; font-family: ui-monospace, monospace;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block;
+  }
+  .confirm .row .cmt { display: block; }
+  .confirm .row .cmt.none { color: var(--faint); font-style: italic; }
+  .confirm .row .del {
+    flex: none; border: none; background: none; color: var(--faint);
+    cursor: pointer; padding: 1px; border-radius: 4px; display: inline-flex;
+  }
+  .confirm .row .del:hover { color: var(--danger); }
+  .confirm .summary { padding: 6px 16px 12px; }
+  .confirm .summary label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
+  .confirm .summary textarea {
+    width: 100%; border: 1px solid var(--line); border-radius: 8px; font: inherit;
+    color: var(--ink); padding: 6px 10px; resize: vertical; min-height: 52px; background: #fff;
+  }
+  .confirm .summary textarea:focus { border-color: var(--green-line); outline: none; }
+  .confirm .foot {
+    display: flex; justify-content: flex-end; gap: 8px;
+    padding: 10px 16px; border-top: 1px solid var(--line);
+  }
+  .confirm .foot .ghost {
+    border: 1px solid var(--line); background: transparent; color: var(--muted);
+    border-radius: 6px; padding: 5px 14px; cursor: pointer; font-size: 13px;
+  }
+  .confirm .foot .ghost:hover { color: var(--ink); border-color: var(--line-strong); }
+  .confirm .foot .submit {
+    border: none; background: var(--green); color: #fff; border-radius: 6px;
+    padding: 5px 14px; cursor: pointer; font-size: 13px;
+  }
+  .confirm .foot .submit:hover { background: #356a4d; }
+
+  /* ---------- 状态行 / toast ---------- */
+  #state-line {
+    font-size: 11.5px; color: var(--faint); padding: 0 6px 6px; text-align: right;
+  }
+  #state-line b { color: var(--green); }
+  #toast {
+    position: fixed; right: 20px; bottom: 20px; background: #33302a; color: #f2efe7;
+    border-radius: 8px; padding: 8px 14px; font-size: 12.5px;
+    opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 60;
+  }
+  #toast.show { opacity: 1; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .quote-fab, .anno-pop { animation: none; }
+    .nl.flash { animation: none; background: var(--amber); }
+    .note-body { scroll-behavior: auto; }
+    #toast { transition: none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>批注批量发送</h1>
+  <span class="proto-tag">原型</span>
+  <span class="flow">划选 → 引用 → 在引用处写批注 → 攒多条 → 一次提交</span>
+  <span class="spacer"></span>
+  <button id="reset">重置演示</button>
+</header>
+
+<main>
+  <section class="note-pane">
+    <div class="note-head">
+      <span class="qbadge note-badge" title="notes/4.4 笔记.md">
+        <span class="icon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><path d="M14 2v6h6"/></svg></span>
+        <span class="body name note-title">4.4 笔记.md</span>
+      </span>
+    </div>
+    <div class="note-body" id="note-body"></div>
+    <div class="note-tip">划选内容，点「引用」；批注写在引用处，Esc 关闭。绿底行 = 已应用的批注。</div>
+  </section>
+
+  <section class="chat-pane">
+    <div id="chat"></div>
+    <div id="state-line"></div>
+    <div id="composer"></div>
+  </section>
+</main>
+
+<div id="toast"></div>
+
+<script>
+"use strict";
+
+/* ---------------- 数据（对齐 SelectedTextContext：content / notePath / startLine / endLine，批注 = comment） ---------------- */
+
+const NOTE_PATH = "notes/4.4 笔记.md";
+const NOTE_NAME = "4.4 笔记";
+const MAX_PINNED = 10; // MAX_PINNED_SELECTIONS
+
+const LINES = [
+  [150, "## 4.4 平衡与自发过程"],
+  [151, "前一节给出了等温等压判据的雏形，本节把它整理成完整的判据。"],
+  [152, ""],
+  [153, "**定义（平衡态）**：孤立系统中不随时间变化、且不存在宏观流动的状态。"],
+  [154, "微观上平衡并非静止，而是正逆速率相等的动态平衡。"],
+  [155, ""],
+  [156, "**判据（等温等压）**：$\\Delta G < 0$ 的过程自发；$\\Delta G = 0$ 时系统处于平衡。"],
+  [157, "对多组分系统，需改用化学势 $\\mu_i$ 之差来表述。"],
+  [158, ""],
+  [159, "(4.23) 式把总吉布斯函数对反应进度的导数拆成两项："],
+  [160, '$$ \\bbox[#dcefdf, 6px, border: 2px solid #3f7d5c]{ \\underbrace{\\sum_B \\nu_B \\mu_B}_{\\text{自发}} \\;\\xrightarrow{\\;\\text{向平衡}\\;}\\; \\underbrace{= 0}_{\\text{平衡}} } $$'],
+  [161, "式号 (4.23) 标在框外，绿框表示当前讨论的判据主体。"],
+  [162, "注意「自发」与「平衡」分别对应不等号与等号两种情形。"],
+  [163, ""],
+  [164, "由 (4.23) 可直接读出：反应朝 $\\Delta G$ 减小的方向进行，"],
+  [165, "直到化学势之差被消耗殆尽，系统到达平衡。"],
+  [166, ""],
+  [167, "**例**：常温下水蒸气在过冷表面凝结，$\\Delta G < 0$，自发；"],
+  [168, "达到饱和蒸气压后凝结与蒸发速率相等，$dG = 0$。"],
+  [169, ""],
+  [170, "(4.24) 给出温度依赖性：$\\frac{d\\ln K}{dT} = \\frac{\\Delta H}{RT^2}$。"],
+  [171, "高温下吸热反应的平衡常数增大，与 Le Chatelier 原理一致。"],
+  [172, ""],
+  [173, "小结：判据 (4.23) 是「方向」，(4.24) 是「温度的影响」。"],
+];
+
+const lineText = (n) => (LINES.find(([k]) => k === n) || [n, ""])[1];
+const quoteForRange = (start, end) => {
+  const nums = [];
+  for (let n = start; n <= end; n++) nums.push(n);
+  return nums.map(lineText).join("\n");
+};
+const linesLabel = (s, e) => (s === e ? "L" + s : "L" + s + "-" + e);
+const collapse = (s) => s.replace(/\s+/g, " ").trim();
+const trunc = (s, n) => (s.length > n ? s.slice(0, n) + "…" : s);
+
+let seq = 1;
+const newId = () => "d" + seq++;
+
+function makeDraft(start, end, comment) {
+  const quote = quoteForRange(start, end);
+  return {
+    id: newId(),
+    key: NOTE_PATH + ":" + start + ":" + end,
+    note: NOTE_NAME,
+    notePath: NOTE_PATH,
+    start,
+    end,
+    lines: linesLabel(start, end),
+    quote,
+    comment: comment || "",
+  };
+}
+
+let sel = null;          // {start, end} 笔记里的当前选区 → live 徽章 + 浮动按钮
+let anchor = null;
+let dragging = false;
+let applied = [];        // 已应用到笔记的范围
+let includeActiveNote = true;
+let drafts = [makeDraft(164, 165, "")];  // 已固定的引用徽章
+let activeAnno = null;   // 当前展开批注弹框的徽章 id
+let overallNote = "";
+let confirmOpen = false; // 提交确认弹层是否打开
+
+const messages = [
+  {
+    id: "m" + seq++,
+    role: "user",
+    drafts: [makeDraft(160, 162, "这里下面那个公式已经说明了就不用重复写了，下面这个公式可以用项标注")],
+    overall: "",
+  },
+  {
+    id: "m" + seq++,
+    role: "ai",
+    text: "(4.23) 现在只剩一个绿框，重复等式的那一行已删掉；框内把左右两部分分别用大括号标成「自发」和「平衡」，中间的箭头仍标着「向平衡」，式号 (4.23) 标在框外。",
+    files: "4.4 笔记.md  +1 −4",
+  },
+  {
+    id: "m" + seq++,
+    role: "hint",
+    text: "试一试：在笔记里划选几行 → 选区下方浮出「引用」按钮 → 点击固定为徽章，批注弹框就在引用处展开。点带笔标的徽章回到引用处补写；Ctrl+Enter 打开提交确认，逐条增删后一次发送。",
+  },
+];
+
+/* ---------------- 工具 ---------------- */
+
+const esc = (s) =>
+  String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+const $ = (s) => document.querySelector(s);
+
+const reducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* 统一的 lucide 风格图标（stroke 继承 currentColor） */
+const SVG = (paths, size = 12) =>
+  '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + paths + "</svg>";
+const I = {
+  file: '<path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><path d="M14 2v6h6"/>',
+  select: '<path d="M5 3a2 2 0 0 0-2 2"/><path d="M19 3a2 2 0 0 1 2 2"/><path d="M21 19a2 2 0 0 1-2 2"/><path d="M5 21a2 2 0 0 1-2-2"/><path d="M9 3h1"/><path d="M14 3h1"/><path d="M9 21h1"/><path d="M14 21h1"/><path d="M3 9v1"/><path d="M21 9v1"/><path d="M3 14v1"/><path d="M21 14v1"/><rect x="8" y="8" width="8" height="8" rx="1"/>',
+  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  pen: '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+  up: '<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>',
+  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  locate: '<line x1="2" x2="5" y1="12" y2="12"/><line x1="19" x2="22" y1="12" y2="12"/><line x1="12" x2="12" y1="2" y2="5"/><line x1="12" x2="12" y1="19" y2="22"/><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/>',
+};
+
+let toastTimer = null;
+function toast(text) {
+  const t = $("#toast");
+  t.textContent = text;
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("show"), 2000);
+}
+
+function buildPayload(list, overall) {
+  const parts = list.map((d) => {
+    const quoted = d.quote.split("\n").map((l) => "> " + l).join("\n");
+    return "> [" + d.notePath + " (" + d.lines + ")]\n" + quoted + "\n\n批注：" + (d.comment || "（无）");
+  });
+  return (overall ? overall + "\n\n" : "") + parts.join("\n\n");
+}
+
+const appliedSet = () => {
+  const set = new Set();
+  for (const r of applied) for (let n = r.start; n <= r.end; n++) set.add(n);
+  return set;
+};
+
+/* ---------------- 徽章渲染（复刻 ContextSelectedTextBadge / ContextBadgeWrapper） ---------------- */
+
+function selectionBadgeHTML(d, opts) {
+  // 复刻：内容（空白折叠、截断）+ 淡色行号；tooltip = 完整内容 + 来源
+  const tip = collapse(d.quote) + "\n" + d.notePath + " (" + d.lines + ")";
+  const cls = opts.live ? " live" : (opts.open ? " anno-open" : "");
+  const right =
+    (opts.live
+      ? '<span class="tip">点击固定</span>'
+      : d.comment.trim()
+        ? '<span class="mark" title="已有批注">' + SVG(I.pen, 11) + "</span>"
+        : '<span class="wait" title="还没写批注（pending）">待批注</span>') +
+    '<span class="rng">' + esc(d.lines) + "</span>";
+  return (
+    '<span class="qbadge' + cls + '" data-badge="' + d.id + '"' +
+    ' title="' + esc(tip) + '">' +
+    '<span class="icon">' + SVG(I.select) + "</span>" +
+    '<span class="rm" data-x="' + d.id + '" title="移除">' + SVG(I.x, 11) + "</span>" +
+    '<span class="body">' + esc(trunc(collapse(d.quote), 22)) + "</span>" +
+    right +
+    "</span>"
+  );
+}
+
+function noteBadgeHTML() {
+  // 复刻 ContextActiveNoteBadge：笔记名 + 淡色 Current；hover 图标换 ×
+  return (
+    '<span class="qbadge note-badge" data-note="1" title="' + esc(NOTE_PATH) + '">' +
+    '<span class="icon">' + SVG(I.file) + "</span>" +
+    '<span class="rm" data-x="__note" title="移除">' + SVG(I.x, 11) + "</span>" +
+    '<span class="body name">' + esc(NOTE_NAME) + "</span>" +
+    '<span class="cur">Current</span>' +
+    "</span>"
+  );
+}
+
+/* ---------------- 渲染 ---------------- */
+
+function renderNote() {
+  const body = $("#note-body");
+  const used = appliedSet();
+  body.innerHTML = "";
+  for (const [n, text] of LINES) {
+    const row = document.createElement("div");
+    row.className = "nl";
+    if (sel && n >= sel.start && n <= sel.end) row.className += " sel";
+    if (used.has(n)) row.className += " applied";
+    row.dataset.n = n;
+    const ln = document.createElement("span");
+    ln.className = "ln";
+    ln.textContent = used.has(n) ? "✓" : n;
+    const lt = document.createElement("span");
+    lt.className = "lt";
+    lt.textContent = text || " ";
+    row.appendChild(ln);
+    row.appendChild(lt);
+    body.appendChild(row);
+  }
+  if (sel && !dragging) showQuoteFab();
+  const d = drafts.find((x) => x.id === activeAnno);
+  if (d) {
+    // 批注弹框出现在引用处：高亮引用行，弹框锚在其末行下方
+    for (const rowEl of body.querySelectorAll(".nl")) {
+      const n = Number(rowEl.dataset.n);
+      if (n >= d.start && n <= d.end) rowEl.className += " sel";
+    }
+    const lastRow = body.querySelector('[data-n="' + d.end + '"]');
+    if (lastRow) {
+      const pop = document.createElement("div");
+      pop.className = "anno-pop";
+      pop.innerHTML =
+        '<div class="pop-head"><span class="title">' + esc(d.lines) + "</span>" +
+        '<span class="tbtns"><button class="tbtn" data-del="' + d.id + '" title="移除这条引用">' + SVG(I.x, 12) + "</button></span></div>" +
+        '<textarea id="anno-input" data-cmt="' + d.id + '" placeholder="对这段的批注…" rows="3">' + esc(d.comment) + "</textarea>" +
+        '<div class="pop-foot"><span class="esc-hint">Esc 关闭 · Ctrl+Enter 完成</span>' +
+        '<button id="pop-done">完成</button></div>';
+      body.appendChild(pop);
+      pop.style.top = lastRow.offsetTop + lastRow.offsetHeight + 6 + "px";
+      pop.style.right = "14px";
+      bindAnnoPop(pop, d);
+    }
+  }
+}
+
+/* 批注弹框内的事件（弹框生活在笔记窗格里） */
+function bindAnnoPop(pop, d) {
+  const ta = pop.querySelector("[data-cmt]");
+  ta.addEventListener("input", () => {
+    d.comment = ta.value;
+    const chip = document.querySelector('.qbadge[data-badge="' + d.id + '"]');
+    if (chip) {
+      const has = d.comment.trim();
+      let mark = chip.querySelector(".mark");
+      if (has && !mark) {
+        mark = document.createElement("span");
+        mark.className = "mark";
+        mark.title = "已有批注";
+        mark.innerHTML = SVG(I.pen, 11);
+        chip.querySelector(".rng").before(mark);
+      } else if (!has && mark) mark.remove();
+      const wait = chip.querySelector(".wait");
+      if (has && wait) wait.remove();
+    }
+    updateStateLine();
+  });
+  pop.querySelector("#pop-done").addEventListener("click", closeAnno);
+  pop.querySelector("[data-del]").addEventListener("click", () => removeDraft(d.id));
+  ta.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); closeAnno(); }
+    if (e.key === "Escape") { e.stopPropagation(); closeAnno(); }
+  });
+}
+
+function closeAnno() {
+  activeAnno = null;
+  renderNote(); renderComposer();
+}
+
+function showQuoteFab() {
+  hideQuoteFab();
+  const body = $("#note-body");
+  const lastRow = body.querySelector('[data-n="' + sel.end + '"]');
+  if (!lastRow) return;
+  const fab = document.createElement("button");
+  fab.className = "quote-fab";
+  fab.id = "quote-fab";
+  fab.title = "添加为引用徽章（Add to Copilot）";
+  fab.innerHTML = SVG(I.select, 13) + "<span>引用</span>";
+  fab.addEventListener("mousedown", (e) => e.stopPropagation());
+  fab.addEventListener("click", (e) => {
+    e.stopPropagation();
+    pinLive();
+  });
+  body.appendChild(fab);
+  fab.style.top = lastRow.offsetTop + lastRow.offsetHeight + 4 + "px";
+  fab.style.right = "14px";
+}
+
+function hideQuoteFab() {
+  const old = $("#quote-fab");
+  if (old) old.remove();
+}
+
+function renderChat() {
+  const chat = $("#chat");
+  chat.innerHTML = "";
+  for (const m of messages) {
+    const div = document.createElement("div");
+    div.className = "msg " + m.role;
+    if (m.role === "user") {
+      // 复刻 MessageContext：消息顶部渲染同一套徽章行，文本在下
+      let html = '<div class="badge-row">' + noteBadgeHTML();
+      for (const d of m.drafts) html += selectionBadgeHTML(d, {});
+      html += "</div>";
+      if (m.overall) html += '<div style="margin-top:6px">' + esc(m.overall) + "</div>";
+      for (const d of m.drafts) {
+        if (d.comment.trim()) {
+          html +=
+            '<div style="margin-top:6px"><span style="color:var(--green)">' + SVG(I.pen, 11) +
+            " " + esc(d.lines) + "</span> " + esc(d.comment) + "</div>";
+        }
+      }
+      html +=
+        '<details class="payload"><summary>agent 收到的内容（payload）</summary><pre>' +
+        esc(buildPayload(m.drafts, m.overall)) +
+        "</pre></details>";
+      div.innerHTML = html;
+    } else if (m.role === "ai") {
+      div.innerHTML = esc(m.text) + (m.files ? '<div class="files">' + SVG(I.file, 12) + " " + esc(m.files) + "</div>" : "");
+      if (m.ask && !m.handled) {
+        const actions = document.createElement("div");
+        actions.className = "msg-actions";
+        actions.innerHTML =
+          '<button data-act="apply" data-msg="' + m.id + '">应用到笔记</button>' +
+          '<button data-act="decline" data-msg="' + m.id + '" class="ghost">先不动</button>';
+        div.appendChild(actions);
+      }
+    } else {
+      div.textContent = m.text;
+    }
+    chat.appendChild(div);
+  }
+  chat.scrollTop = chat.scrollHeight;
+}
+
+/* ---------------- 输入器：徽章行 + 批注面板（增量所在） ---------------- */
+
+function renderComposer() {
+  const box = $("#composer");
+  let html = '<div class="composer">';
+
+  html += '<div class="badge-row" id="badge-row">';
+  if (includeActiveNote) html += noteBadgeHTML();
+  for (const d of drafts) html += selectionBadgeHTML(d, { open: d.id === activeAnno });
+  if (sel) {
+    // 复刻 live 选区徽章：未固定，点击固定
+    const live = {
+      id: "__live",
+      quote: quoteForRange(sel.start, sel.end),
+      lines: linesLabel(sel.start, sel.end),
+      comment: "",
+    };
+    html += selectionBadgeHTML(live, { live: true });
+  }
+  html += "</div>";
+
+  html +=
+    '<div class="input-line"><input id="overall" placeholder="Ask anything • @ to add context • / for commands" value="' + esc(overallNote) + '" /></div>' +
+    '<div class="foot">' +
+    '<span class="plus" id="plus" title="添加上下文（原型：划选笔记内容添加）">' + SVG(I.plus, 14) + "</span>" +
+    '<span class="kbd-hint">Ctrl+Enter 打开提交确认</span>' +
+    '<span class="spacer"></span>' +
+    '<span class="model">Default (recomm… <span class="chev">▾</span></span>' +
+    '<span class="auto">Auto <span class="chev">▾</span></span>' +
+    '<button class="send" id="send" title="提交批注"' + (canSend() ? "" : " disabled") + ">" + SVG(I.up, 14) + "</button>" +
+    "</div></div>";
+  box.innerHTML = html;
+  bindComposer();
+  updateStateLine();
+}
+
+function canSend() {
+  return drafts.length > 0 || overallNote.trim().length > 0;
+}
+
+function bindComposer() {
+  document.querySelectorAll(".qbadge[data-badge]").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      if (e.target.closest("[data-x]")) return;
+      const id = el.dataset.badge;
+      if (id === "__live") { pinLive(); return; }
+      activeAnno = activeAnno === id ? null : id;   // 增量：点徽章 → 回到引用处展开批注弹框
+      renderNote(); renderComposer();
+      if (activeAnno === id) {
+        const d0 = drafts.find((x) => x.id === id);
+        if (d0) {
+          const row0 = $("#note-body").querySelector('[data-n="' + d0.start + '"]');
+          if (row0) row0.scrollIntoView({ block: "center", behavior: reducedMotion() ? "auto" : "smooth" });
+        }
+        focusAnnoInput();
+      }
+    });
+  });
+  document.querySelectorAll("[data-x]").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const id = el.dataset.x;
+      if (id === "__note") { includeActiveNote = false; renderComposer(); return; }
+      removeDraft(id);
+    });
+  });
+  const cmt = document.querySelector("[data-cmt]");
+  if (cmt) {
+    cmt.addEventListener("input", () => {
+      const d = drafts.find((x) => x.id === cmt.dataset.cmt);
+      if (!d) return;
+      d.comment = cmt.value;
+      const chip = document.querySelector('.qbadge[data-badge="' + d.id + '"]');
+      if (chip) {
+        const has = d.comment.trim();
+        let mark = chip.querySelector(".mark");
+        if (has && !mark) {
+          mark = document.createElement("span");
+          mark.className = "mark";
+          mark.title = "已有批注";
+          mark.innerHTML = SVG(I.pen, 11);
+          chip.querySelector(".rng").before(mark);
+        } else if (!has && mark) mark.remove();
+        const wait = chip.querySelector(".wait");
+        if (has && wait) wait.remove();
+      }
+      updateStateLine();
+    });
+  }
+  const overall = $("#overall");
+  if (overall) {
+    overall.addEventListener("input", () => {
+      overallNote = overall.value;
+      $("#send").disabled = !canSend();
+      updateStateLine();
+    });
+  }
+  const plus = $("#plus");
+  if (plus) plus.addEventListener("click", () => toast("原型：划选笔记内容 → 点浮动「引用」按钮添加"));
+  const send = $("#send");
+  if (send) send.addEventListener("click", sendAll);
+}
+
+function focusAnnoInput() {
+  const el = $("#anno-input");
+  if (el) el.focus();
+}
+
+function removeDraft(id) {
+  drafts = drafts.filter((d) => d.id !== id);
+  if (activeAnno === id) activeAnno = null;
+  renderNote(); renderComposer();
+  toast("已移除该条批注");
+}
+
+function updateStateLine() {
+  const written = drafts.filter((d) => d.comment.trim()).length;
+  const lines = drafts.map((d) => d.lines).join("，");
+  $("#state-line").innerHTML =
+    "pending 批注 <b>" + drafts.length + "</b> 条，已写 " + written + " 条" +
+    (lines ? "（" + esc(lines) + "）" : "") +
+    (applied.length ? "，已应用 " + applied.length + " 段" : "");
+}
+
+/* ---------------- 动作 ---------------- */
+
+function clearSel() {
+  sel = null;
+  anchor = null;
+  renderNote();
+  renderComposer();
+}
+
+function pinLive() {
+  if (!sel) return;
+  const start = sel.start, end = sel.end;
+  if (drafts.length >= MAX_PINNED) {
+    toast("最多添加 " + MAX_PINNED + " 条引用。移除一条后再添加。");
+    return;
+  }
+  const dup = drafts.find((d) => d.start === start && d.end === end);
+  sel = null; anchor = null;
+  if (dup) {
+    toast("这段已添加过（" + dup.lines + "）");
+    activeAnno = dup.id;
+    renderNote(); renderComposer(); focusAnnoInput();
+    return;
+  }
+  const d = makeDraft(start, end, "");
+  drafts.push(d);
+  activeAnno = d.id;
+  renderNote(); renderComposer(); focusAnnoInput();
+  toast("已固定为引用徽章，写下批注");
+}
+
+function sendAll() {
+  if (!canSend()) return;
+  if (drafts.length) { openConfirm(); return; }  // 有批注：先走提交确认
+  doSend();                                      // 只有文本：直接发
+}
+
+function openConfirm() {
+  confirmOpen = true;
+  renderConfirm();
+}
+
+function closeConfirm() {
+  confirmOpen = false;
+  const el = $("#confirm-root");
+  if (el) el.remove();
+}
+
+function renderConfirm() {
+  closeConfirm();
+  const root = document.createElement("div");
+  root.className = "confirm-backdrop";
+  root.id = "confirm-root";
+  let rows = "";
+  drafts.forEach((d) => {
+    rows +=
+      '<div class="row">' +
+      '<span class="lines">' + esc(d.lines) + "</span>" +
+      '<span class="what" data-edit-row="' + d.id + '" title="回到引用处编辑">' +
+      '<span class="q">' + esc(trunc(collapse(d.quote), 26)) + "</span>" +
+      (d.comment.trim()
+        ? '<span class="cmt">' + esc(d.comment) + "</span>"
+        : '<span class="cmt none">待批注</span>') +
+      "</span>" +
+      '<button class="del" data-del-row="' + d.id + '" title="从提交中移除">' + SVG(I.x, 12) + "</button>" +
+      "</div>";
+  });
+  root.innerHTML =
+    '<div class="confirm">' +
+    '<div class="head">提交批注 <span class="pending-tag">' + drafts.length + " 条 pending，仅你能看到</span></div>" +
+    '<div class="list">' + rows + "</div>" +
+    '<div class="summary"><label for="confirm-summary">总结（可选，随批注一起发送）</label>' +
+    '<textarea id="confirm-summary" rows="2">' + esc(overallNote) + "</textarea></div>" +
+    '<div class="foot"><button class="ghost" id="confirm-cancel">返回编辑</button>' +
+    '<button class="submit" id="confirm-submit">提交并发送 ' + drafts.length + " 条批注</button></div>" +
+    "</div>";
+  document.body.appendChild(root);
+  root.addEventListener("mousedown", (e) => {
+    if (e.target === root) closeConfirm();
+  });
+  root.querySelectorAll("[data-del-row]").forEach((el) => {
+    el.addEventListener("click", () => {
+      drafts = drafts.filter((d) => d.id !== el.dataset.delRow);
+      if (!drafts.length) { closeConfirm(); renderComposer(); return; }
+      renderComposer(); renderConfirm();
+    });
+  });
+  root.querySelectorAll("[data-edit-row]").forEach((el) => {
+    el.addEventListener("click", () => {
+      closeConfirm();
+      activeAnno = el.dataset.editRow;
+      renderNote(); renderComposer();
+      const d0 = drafts.find((x) => x.id === activeAnno);
+      if (d0) {
+        const row0 = $("#note-body").querySelector('[data-n="' + d0.start + '"]');
+        if (row0) row0.scrollIntoView({ block: "center", behavior: reducedMotion() ? "auto" : "smooth" });
+      }
+      focusAnnoInput();
+    });
+  });
+  root.querySelector("#confirm-cancel").addEventListener("click", closeConfirm);
+  root.querySelector("#confirm-submit").addEventListener("click", submitConfirm);
+  const summary = root.querySelector("#confirm-summary");
+  summary.focus();
+  summary.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); submitConfirm(); }
+    if (e.key === "Escape") { e.stopPropagation(); closeConfirm(); }
+  });
+}
+
+function submitConfirm() {
+  const summary = $("#confirm-summary");
+  if (summary) overallNote = summary.value;
+  closeConfirm();
+  doSend();
+}
+
+function doSend() {
+  if (!canSend()) return;
+  const sent = drafts.map((d) => ({ ...d }));
+  const empty = drafts.filter((d) => !d.comment.trim()).length;
+  messages.push({ id: "m" + seq++, role: "user", drafts: sent, overall: overallNote });
+  if (sent.length) {
+    messages.push({
+      id: "m" + seq++,
+      role: "ai",
+      text: "收到 " + sent.length + " 条批注（一次消息），要逐条应用到 " + NOTE_NAME + ".md 吗？",
+      ask: true,
+    });
+  } else {
+    messages.push({ id: "m" + seq++, role: "ai", text: "收到。" });
+  }
+  drafts = [];
+  overallNote = "";
+  activeAnno = null;
+  renderChat(); renderComposer();
+  if (sent.length) toast("已提交 " + sent.length + " 条批注" + (empty ? "，其中 " + empty + " 条未写评语" : ""));
+}
+
+function handleChatAction(act, msgId) {
+  const m = messages.find((x) => x.id === msgId);
+  if (!m || m.handled) return;
+  m.handled = true;
+  if (act === "apply") {
+    const labels = m.drafts.map((d) => d.lines);
+    applied.push(...m.drafts.map((d) => ({ start: d.start, end: d.end })));
+    messages.push({
+      id: "m" + seq++,
+      role: "ai",
+      text: "已应用到笔记：" + labels.join("、") + "。左侧绿色行即改动位置。",
+    });
+    renderNote();
+  } else {
+    messages.push({
+      id: "m" + seq++,
+      role: "ai",
+      text: "好，这些批注先留在这条消息里。",
+    });
+  }
+  renderChat(); updateStateLine();
+}
+
+/* ---------------- 事件绑定 ---------------- */
+
+const noteBody = $("#note-body");
+
+noteBody.addEventListener("mousedown", (e) => {
+  const row = e.target.closest(".nl");
+  if (!row) {        // 点空白处：取消选择
+    if (sel) clearSel();
+    return;
+  }
+  e.preventDefault(); // 行粒度划选，不启用原生文字选择
+  dragging = true;
+  if (activeAnno) activeAnno = null;  // 开始新的划选：先收起上一个批注弹框
+  const n = Number(row.dataset.n);
+  if (e.shiftKey && anchor !== null) {
+    sel = { start: Math.min(anchor, n), end: Math.max(anchor, n) };
+  } else {
+    anchor = n;
+    sel = { start: n, end: n };
+  }
+  hideQuoteFab();
+  renderNote(); renderComposer();
+});
+
+noteBody.addEventListener("mouseover", (e) => {
+  if (!dragging) return;
+  const row = e.target.closest(".nl");
+  if (!row) return;
+  const n = Number(row.dataset.n);
+  const next = { start: Math.min(anchor, n), end: Math.max(anchor, n) };
+  if (sel && next.start === sel.start && next.end === sel.end) return;
+  sel = next;
+  renderNote(); renderComposer();
+});
+
+document.addEventListener("mouseup", () => {
+  if (!dragging) return;
+  dragging = false;
+  if (sel) showQuoteFab();   // 划选结束：选区旁浮出引用按钮
+});
+
+/* 聊天区：点 ask 消息上的动作按钮 */
+$("#chat").addEventListener("click", (e) => {
+  const act = e.target.closest("[data-act]");
+  if (act) handleChatAction(act.dataset.act, act.dataset.msg);
+});
+
+/* Ctrl+Enter 在输入器任何位置都能发送；Esc 先关面板、再取消选择 */
+$("#composer").addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+    e.preventDefault();
+    sendAll();
+    return;
+  }
+  if (e.key === "Escape" && activeAnno) {
+    activeAnno = null;
+    renderComposer();
+  }
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && confirmOpen) { closeConfirm(); return; }
+  if (e.key !== "Escape") return;
+  const a = document.activeElement;
+  if (a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA")) return; // 输入器内部自行处理
+  if (sel) clearSel();
+});
+
+$("#reset").addEventListener("click", () => {
+  closeConfirm();
+  seq = 1;
+  drafts = [makeDraft(164, 165, "")];
+  overallNote = "";
+  activeAnno = null;
+  includeActiveNote = true;
+  sel = null; anchor = null; dragging = false; applied = [];
+  messages.splice(3);
+  renderAll();
+  toast("已重置演示");
+});
+
+/* ---------------- 启动 ---------------- */
+
+function renderAll() {
+  renderNote(); renderChat(); renderComposer();
+}
+
+renderAll();
+</script>
+</body>
+</html>
