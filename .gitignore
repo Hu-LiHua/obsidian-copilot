@@ -49,4 +49,8 @@ opencode.json.backup.*
 
 # Local agent configuration (machine-bound; do not commit local edits)
 .claude/settings.json
+.claude/settings.json.backup.*
+.claude/CLAUDE.md
 AGENTS.md
+AGENTS.md.backup.*
+.codegraph/
